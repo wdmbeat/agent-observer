@@ -1,0 +1,302 @@
+decision_id,slot_id,action,tile_id,program,request_id,reason
+D000001,N20261005-S001,observe,T00041,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000002,N20261005-S001,observe,T00050,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000003,N20261005-S002,observe,T00049,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000004,N20261005-S003,observe,T00042,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000005,N20261005-S004,observe,T00002,BACKUP,,immediate gain plus what it does to coverage evenness
+D000006,N20261005-S005,observe,T00058,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000007,N20261005-S006,observe,T00057,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000008,N20261005-S008,observe,T00059,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000009,N20261005-S008,observe,T00003,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000010,N20261005-S009,observe,T00063,DARK,,immediate gain plus what it does to coverage evenness
+D000011,N20261005-S009,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000012,N20261005-S010,observe,T00062,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000013,N20261005-S010,observe,T00043,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000014,N20261005-S011,observe,T00053,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000015,N20261005-S012,observe,T00055,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000016,N20261005-S013,observe,T00004,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000017,N20261005-S014,wait,,,,no legal observable candidate can finish in its known window
+D000018,N20261005-S015,wait,,,,no legal observable candidate can finish in its known window
+D000019,N20261005-S016,wait,,,,no legal observable candidate can finish in its known window
+D000020,N20261005-S017,wait,,,,no legal observable candidate can finish in its known window
+D000021,N20261005-S018,wait,,,,no legal observable candidate can finish in its known window
+D000022,N20261005-S019,wait,,,,no legal observable candidate can finish in its known window
+D000023,N20261005-S020,wait,,,,no legal observable candidate can finish in its known window
+D000024,N20261005-S021,wait,,,,no legal observable candidate can finish in its known window
+D000025,N20261005-S022,wait,,,,no legal observable candidate can finish in its known window
+D000026,N20261005-S023,wait,,,,no legal observable candidate can finish in its known window
+D000027,N20261005-S024,wait,,,,no legal observable candidate can finish in its known window
+D000028,N20261005-S025,wait,,,,no legal observable candidate can finish in its known window
+D000029,N20261005-S026,wait,,,,no legal observable candidate can finish in its known window
+D000030,N20261005-S027,wait,,,,no legal observable candidate can finish in its known window
+D000031,N20261005-S028,wait,,,,no legal observable candidate can finish in its known window
+D000032,N20261005-S029,wait,,,,no legal observable candidate can finish in its known window
+D000033,N20261005-S030,wait,,,,no legal observable candidate can finish in its known window
+D000034,N20261005-S031,wait,,,,no legal observable candidate can finish in its known window
+D000035,N20261005-S032,wait,,,,no legal observable candidate can finish in its known window
+D000036,N20261005-S033,wait,,,,no legal observable candidate can finish in its known window
+D000037,N20261005-S034,wait,,,,no legal observable candidate can finish in its known window
+D000038,N20261005-S035,wait,,,,no legal observable candidate can finish in its known window
+D000039,N20261005-S036,wait,,,,no legal observable candidate can finish in its known window
+D000040,N20261005-S037,wait,,,,no legal observable candidate can finish in its known window
+D000041,N20261005-S038,wait,,,,no legal observable candidate can finish in its known window
+D000042,N20261005-S039,wait,,,,no legal observable candidate can finish in its known window
+D000043,N20261005-S040,wait,,,,no legal observable candidate can finish in its known window
+D000044,N20261005-S041,wait,,,,no legal observable candidate can finish in its known window
+D000045,N20261005-S042,wait,,,,no legal observable candidate can finish in its known window
+D000046,N20261006-S001,observe,T00042,BRIGHT,,required tile with only 1 window(s) left
+D000047,N20261006-S002,observe,T00046,BACKUP,RQ0001,immediate gain plus what it does to coverage evenness
+D000048,N20261006-S002,observe,T00044,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000049,N20261006-S003,observe,T00052,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000050,N20261006-S004,observe,T00054,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000051,N20261006-S005,observe,T00061,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000052,N20261006-S006,observe,T00001,BACKUP,,immediate gain plus what it does to coverage evenness
+D000053,N20261006-S007,observe,T00004,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000054,N20261006-S008,observe,T00006,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000055,N20261006-S010,observe,T00005,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000056,N20261006-S011,observe,T00051,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000057,N20261006-S013,observe,T00064,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000058,N20261006-S014,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000059,N20261006-S015,observe,T00011,BACKUP,,immediate gain plus what it does to coverage evenness
+D000060,N20261006-S017,observe,T00016,BACKUP,,immediate gain plus what it does to coverage evenness
+D000061,N20261006-S017,observe,T00014,BACKUP,,immediate gain plus what it does to coverage evenness
+D000062,N20261006-S018,observe,T00010,BACKUP,,immediate gain plus what it does to coverage evenness
+D000063,N20261006-S019,observe,T00013,BACKUP,,immediate gain plus what it does to coverage evenness
+D000064,N20261006-S020,observe,T00015,BACKUP,,immediate gain plus what it does to coverage evenness
+D000065,N20261006-S020,observe,T00001,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000066,N20261006-S021,observe,T00016,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000067,N20261006-S021,observe,T00003,DARK,,immediate gain plus what it does to coverage evenness
+D000068,N20261006-S022,observe,T00008,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000069,N20261006-S023,observe,T00009,BACKUP,,immediate gain plus what it does to coverage evenness
+D000070,N20261006-S024,observe,T00010,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000071,N20261006-S024,observe,T00015,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000072,N20261006-S025,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000073,N20261006-S025,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000074,N20261006-S026,observe,T00021,BACKUP,,immediate gain plus what it does to coverage evenness
+D000075,N20261006-S027,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000076,N20261006-S027,observe,T00023,BACKUP,,immediate gain plus what it does to coverage evenness
+D000077,N20261006-S028,observe,T00012,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000078,N20261006-S029,observe,T00014,DARK,,immediate gain plus what it does to coverage evenness
+D000079,N20261006-S029,observe,T00020,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000080,N20261006-S030,observe,T00022,BACKUP,,immediate gain plus what it does to coverage evenness
+D000081,N20261006-S031,observe,T00017,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000082,N20261006-S032,observe,T00024,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000083,N20261006-S033,observe,T00016,DARK,,immediate gain plus what it does to coverage evenness
+D000084,N20261006-S034,observe,T00018,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000085,N20261006-S035,wait,,,,no legal observable candidate can finish in its known window
+D000086,N20261006-S036,wait,,,,no legal observable candidate can finish in its known window
+D000087,N20261006-S037,wait,,,,no legal observable candidate can finish in its known window
+D000088,N20261006-S038,wait,,,,no legal observable candidate can finish in its known window
+D000089,N20261006-S039,wait,,,,no legal observable candidate can finish in its known window
+D000090,N20261006-S040,wait,,,,no legal observable candidate can finish in its known window
+D000091,N20261006-S041,wait,,,,no legal observable candidate can finish in its known window
+D000092,N20261006-S042,wait,,,,no legal observable candidate can finish in its known window
+D000093,N20261007-S001,observe,T00041,BACKUP,,required tile with only 1 window(s) left
+D000094,N20261007-S001,observe,T00048,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000095,N20261007-S002,observe,T00056,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000096,N20261007-S004,observe,T00060,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000097,N20261007-S005,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000098,N20261007-S006,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000099,N20261007-S006,observe,T00059,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000100,N20261007-S007,observe,T00050,BACKUP,,immediate gain plus what it does to coverage evenness
+D000101,N20261007-S008,observe,T00002,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000102,N20261007-S009,observe,T00060,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000103,N20261007-S010,observe,T00061,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000104,N20261007-S011,observe,T00002,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000105,N20261007-S012,observe,T00058,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000106,N20261007-S014,observe,T00049,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000107,N20261007-S015,observe,T00049,BACKUP,,immediate gain plus what it does to coverage evenness
+D000108,N20261007-S016,observe,T00006,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000109,N20261007-S017,observe,T00049,BACKUP,,immediate gain plus what it does to coverage evenness
+D000110,N20261007-S018,observe,T00051,BACKUP,,immediate gain plus what it does to coverage evenness
+D000111,N20261007-S020,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000112,N20261007-S021,observe,T00005,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000113,N20261007-S022,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000114,N20261007-S024,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000115,N20261007-S025,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000116,N20261007-S026,observe,T00013,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000117,N20261007-S027,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000118,N20261007-S027,observe,T00020,BACKUP,,immediate gain plus what it does to coverage evenness
+D000119,N20261007-S028,observe,T00059,BACKUP,,immediate gain plus what it does to coverage evenness
+D000120,N20261007-S028,observe,T00009,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000121,N20261007-S029,observe,T00021,BACKUP,,immediate gain plus what it does to coverage evenness
+D000122,N20261007-S030,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000123,N20261007-S031,observe,T00023,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000124,N20261007-S032,observe,T00021,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000125,N20261007-S032,observe,T00019,BACKUP,,immediate gain plus what it does to coverage evenness
+D000126,N20261007-S034,observe,T00018,BACKUP,,immediate gain plus what it does to coverage evenness
+D000127,N20261007-S035,observe,T00023,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000128,N20261007-S036,observe,T00009,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000129,N20261007-S036,observe,T00021,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000130,N20261007-S037,observe,T00015,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000131,N20261007-S037,observe,T00022,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000132,N20261007-S039,observe,T00026,BACKUP,,immediate gain plus what it does to coverage evenness
+D000133,N20261007-S040,observe,T00029,BACKUP,,immediate gain plus what it does to coverage evenness
+D000134,N20261007-S041,observe,T00030,BACKUP,,immediate gain plus what it does to coverage evenness
+D000135,N20261007-S042,observe,T00030,BACKUP,,immediate gain plus what it does to coverage evenness
+D000136,N20261007-S042,wait,,,,no legal observable candidate can finish in its known window
+D000137,N20261008-S001,observe,T00049,DARK,,required tile with only 1 window(s) left
+D000138,N20261008-S002,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000139,N20261008-S002,observe,T00043,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000140,N20261008-S003,observe,T00047,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000141,N20261008-S004,observe,T00053,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000142,N20261008-S005,observe,T00059,DARK,,immediate gain plus what it does to coverage evenness
+D000143,N20261008-S006,observe,T00063,DARK,,immediate gain plus what it does to coverage evenness
+D000144,N20261008-S006,observe,T00054,DARK,,immediate gain plus what it does to coverage evenness
+D000145,N20261008-S008,observe,T00051,DARK,,immediate gain plus what it does to coverage evenness
+D000146,N20261008-S009,observe,T00063,DARK,,immediate gain plus what it does to coverage evenness
+D000147,N20261008-S010,observe,T00002,DARK,,immediate gain plus what it does to coverage evenness
+D000148,N20261008-S011,observe,T00055,DARK,,immediate gain plus what it does to coverage evenness
+D000149,N20261008-S012,observe,T00001,DARK,,immediate gain plus what it does to coverage evenness
+D000150,N20261008-S012,observe,T00056,DARK,,immediate gain plus what it does to coverage evenness
+D000151,N20261008-S014,observe,T00062,DARK,,immediate gain plus what it does to coverage evenness
+D000152,N20261008-S014,observe,T00059,DARK,,immediate gain plus what it does to coverage evenness
+D000153,N20261008-S015,observe,T00003,DARK,,immediate gain plus what it does to coverage evenness
+D000154,N20261008-S015,observe,T00057,DARK,,immediate gain plus what it does to coverage evenness
+D000155,N20261008-S017,observe,T00006,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000156,N20261008-S018,observe,T00005,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000157,N20261008-S020,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000158,N20261008-S021,observe,T00005,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000159,N20261008-S022,observe,T00005,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000160,N20261008-S024,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000161,N20261008-S025,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000162,N20261008-S026,observe,T00013,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000163,N20261008-S027,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000164,N20261008-S027,report_instrument_failure,,,,
+D000165,N20261008-S029,observe,T00010,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000166,N20261008-S029,observe,T00013,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000167,N20261008-S030,observe,T00005,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000168,N20261008-S032,observe,T00010,DARK,,immediate gain plus what it does to coverage evenness
+D000169,N20261008-S032,observe,T00015,DARK,,immediate gain plus what it does to coverage evenness
+D000170,N20261008-S033,observe,T00023,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000171,N20261008-S033,observe,T00020,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000172,N20261008-S034,observe,T00012,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000173,N20261008-S035,observe,T00009,DARK,,immediate gain plus what it does to coverage evenness
+D000174,N20261008-S035,observe,T00021,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000175,N20261008-S036,observe,T00017,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000176,N20261008-S037,observe,T00024,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000177,N20261008-S038,observe,T00026,BACKUP,,immediate gain plus what it does to coverage evenness
+D000178,N20261008-S039,observe,T00032,BACKUP,,immediate gain plus what it does to coverage evenness
+D000179,N20261008-S041,observe,T00029,BACKUP,,immediate gain plus what it does to coverage evenness
+D000180,N20261008-S042,observe,T00030,BACKUP,,immediate gain plus what it does to coverage evenness
+D000181,N20261008-S042,wait,,,,no legal observable candidate can finish in its known window
+D000182,N20261009-S001,observe,T00050,BRIGHT,,required tile with only 1 window(s) left
+D000183,N20261009-S001,observe,T00044,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000184,N20261009-S002,observe,T00053,DARK,,immediate gain plus what it does to coverage evenness
+D000185,N20261009-S003,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000186,N20261009-S003,observe,T00061,DARK,,immediate gain plus what it does to coverage evenness
+D000187,N20261009-S005,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000188,N20261009-S005,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000189,N20261009-S006,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000190,N20261009-S006,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000191,N20261009-S007,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000192,N20261009-S007,observe,T00060,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000193,N20261009-S009,observe,T00043,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000194,N20261009-S009,observe,T00050,BACKUP,,immediate gain plus what it does to coverage evenness
+D000195,N20261009-S010,observe,T00058,DARK,,immediate gain plus what it does to coverage evenness
+D000196,N20261009-S011,observe,T00064,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000197,N20261009-S013,observe,T00005,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000198,N20261009-S014,observe,T00006,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000199,N20261009-S016,wait,,,,no legal observable candidate can finish in its known window
+D000200,N20261009-S017,wait,,,,no legal observable candidate can finish in its known window
+D000201,N20261009-S018,wait,,,,no legal observable candidate can finish in its known window
+D000202,N20261009-S019,wait,,,,no legal observable candidate can finish in its known window
+D000203,N20261009-S020,wait,,,,no legal observable candidate can finish in its known window
+D000204,N20261009-S021,wait,,,,no legal observable candidate can finish in its known window
+D000205,N20261009-S022,wait,,,,no legal observable candidate can finish in its known window
+D000206,N20261009-S023,wait,,,,no legal observable candidate can finish in its known window
+D000207,N20261009-S024,wait,,,,no legal observable candidate can finish in its known window
+D000208,N20261009-S025,wait,,,,no legal observable candidate can finish in its known window
+D000209,N20261009-S026,wait,,,,no legal observable candidate can finish in its known window
+D000210,N20261009-S027,wait,,,,no legal observable candidate can finish in its known window
+D000211,N20261009-S028,wait,,,,no legal observable candidate can finish in its known window
+D000212,N20261009-S029,wait,,,,no legal observable candidate can finish in its known window
+D000213,N20261009-S030,wait,,,,no legal observable candidate can finish in its known window
+D000214,N20261009-S031,wait,,,,no legal observable candidate can finish in its known window
+D000215,N20261009-S032,wait,,,,no legal observable candidate can finish in its known window
+D000216,N20261009-S033,wait,,,,no legal observable candidate can finish in its known window
+D000217,N20261009-S034,wait,,,,no legal observable candidate can finish in its known window
+D000218,N20261009-S035,wait,,,,no legal observable candidate can finish in its known window
+D000219,N20261009-S036,wait,,,,no legal observable candidate can finish in its known window
+D000220,N20261009-S037,wait,,,,no legal observable candidate can finish in its known window
+D000221,N20261009-S038,wait,,,,no legal observable candidate can finish in its known window
+D000222,N20261009-S039,wait,,,,no legal observable candidate can finish in its known window
+D000223,N20261009-S040,wait,,,,no legal observable candidate can finish in its known window
+D000224,N20261009-S041,wait,,,,no legal observable candidate can finish in its known window
+D000225,N20261009-S042,observe,T00020,DARK,,immediate gain plus what it does to coverage evenness
+D000226,N20261009-S042,observe,T00023,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000227,N20261010-S001,observe,T00041,BACKUP,,required tile with only 1 window(s) left
+D000228,N20261010-S001,observe,T00041,BACKUP,,immediate gain plus what it does to coverage evenness
+D000229,N20261010-S002,observe,T00054,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000230,N20261010-S003,observe,T00056,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000231,N20261010-S004,observe,T00058,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000232,N20261010-S006,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000233,N20261010-S006,observe,T00050,BACKUP,,immediate gain plus what it does to coverage evenness
+D000234,N20261010-S007,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000235,N20261010-S007,observe,T00059,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000236,N20261010-S008,observe,T00050,BACKUP,,immediate gain plus what it does to coverage evenness
+D000237,N20261010-S009,observe,T00008,BACKUP,,immediate gain plus what it does to coverage evenness
+D000238,N20261010-S010,observe,T00007,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000239,N20261010-S011,observe,T00049,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000240,N20261010-S012,observe,T00008,BACKUP,,immediate gain plus what it does to coverage evenness
+D000241,N20261010-S014,observe,T00051,BACKUP,,immediate gain plus what it does to coverage evenness
+D000242,N20261010-S015,observe,T00057,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000243,N20261010-S017,wait,,,,no legal observable candidate can finish in its known window
+D000244,N20261010-S018,wait,,,,no legal observable candidate can finish in its known window
+D000245,N20261010-S019,wait,,,,no legal observable candidate can finish in its known window
+D000246,N20261010-S020,wait,,,,no legal observable candidate can finish in its known window
+D000247,N20261010-S021,observe,T00008,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000248,N20261010-S022,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000249,N20261010-S023,observe,T00057,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000250,N20261010-S025,observe,T00057,BACKUP,,immediate gain plus what it does to coverage evenness
+D000251,N20261010-S026,observe,T00008,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000252,N20261010-S028,observe,T00064,BACKUP,,immediate gain plus what it does to coverage evenness
+D000253,N20261010-S029,observe,T00017,BACKUP,,immediate gain plus what it does to coverage evenness
+D000254,N20261010-S029,report_instrument_failure,,,,
+D000255,N20261010-S031,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000256,N20261010-S032,observe,T00019,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000257,N20261010-S034,observe,T00008,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000258,N20261010-S035,observe,T00019,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000259,N20261010-S037,observe,T00022,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000260,N20261010-S038,observe,T00032,BACKUP,,immediate gain plus what it does to coverage evenness
+D000261,N20261010-S039,observe,T00026,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000262,N20261010-S041,observe,T00029,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000263,N20261010-S042,observe,T00030,BACKUP,,immediate gain plus what it does to coverage evenness
+D000264,N20261010-S042,wait,,,,no legal observable candidate can finish in its known window
+D000265,N20261011-S001,observe,T00042,BRIGHT,,required tile with only 1 window(s) left
+D000266,N20261011-S002,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000267,N20261011-S002,observe,T00045,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000268,N20261011-S003,observe,T00048,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000269,N20261011-S004,observe,T00053,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000270,N20261011-S005,observe,T00045,BACKUP,,immediate gain plus what it does to coverage evenness
+D000271,N20261011-S005,observe,T00050,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000272,N20261011-S006,observe,T00050,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000273,N20261011-S007,observe,T00048,BACKUP,,immediate gain plus what it does to coverage evenness
+D000274,N20261011-S008,observe,T00008,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000275,N20261011-S010,wait,,,,no legal observable candidate can finish in its known window
+D000276,N20261011-S011,observe,T00060,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000277,N20261011-S012,observe,T00008,BACKUP,,immediate gain plus what it does to coverage evenness
+D000278,N20261011-S014,observe,T00011,BACKUP,,immediate gain plus what it does to coverage evenness
+D000279,N20261011-S015,observe,T00011,BACKUP,,immediate gain plus what it does to coverage evenness
+D000280,N20261011-S017,observe,T00051,BACKUP,,immediate gain plus what it does to coverage evenness
+D000281,N20261011-S018,observe,T00060,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000282,N20261011-S019,wait,,,,no legal observable candidate can finish in its known window
+D000283,N20261011-S020,wait,,,,no legal observable candidate can finish in its known window
+D000284,N20261011-S021,wait,,,,no legal observable candidate can finish in its known window
+D000285,N20261011-S022,wait,,,,no legal observable candidate can finish in its known window
+D000286,N20261011-S023,observe,T00008,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000287,N20261011-S024,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000288,N20261011-S026,observe,T00007,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000289,N20261011-S027,observe,T00011,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000290,N20261011-S028,observe,T00013,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000291,N20261011-S029,observe,T00017,BACKUP,,immediate gain plus what it does to coverage evenness
+D000292,N20261011-S031,observe,T00062,BACKUP,,immediate gain plus what it does to coverage evenness
+D000293,N20261011-S031,observe,T00019,BACKUP,,immediate gain plus what it does to coverage evenness
+D000294,N20261011-S033,observe,T00019,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000295,N20261011-S034,observe,T00019,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000296,N20261011-S036,observe,T00019,BRIGHT,,repeat observation to confirm an anomalous realized-score deviation
+D000297,N20261011-S037,observe,T00018,BRIGHT,,immediate gain plus what it does to coverage evenness
+D000298,N20261011-S039,observe,T00018,BACKUP,,repeat observation to confirm an anomalous realized-score deviation
+D000299,N20261011-S040,observe,T00030,BACKUP,,immediate gain plus what it does to coverage evenness
+D000300,N20261011-S041,observe,T00028,BACKUP,,immediate gain plus what it does to coverage evenness
+D000301,N20261011-S042,wait,,,,no legal observable candidate can finish in its known window

@@ -4,6 +4,7 @@
 pub mod anomaly;
 pub mod builtin;
 pub mod preview;
+pub mod reference;
 pub mod strategy;
 
 use std::path::PathBuf;

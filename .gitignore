@@ -7,3 +7,7 @@ tests/golden/*/decision_replay.html
 tests/golden/*/agent.log
 tests/golden/*/scratch/
 tests/golden/*/workflow_result.json
+tests/golden-reference/*/decision_replay.html
+tests/golden-reference/*/agent.log
+tests/golden-reference/*/scratch/
+tests/golden-reference/*/workflow_result.json

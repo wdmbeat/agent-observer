@@ -1,8 +1,9 @@
 //! End-to-end workflow gate: run an agent through the full pipeline and
 //! require byte-identical decisions.csv plus the golden score total. Covers
-//! both CLI agent forms: `python <script>` (JSONL subprocess transport) and
-//! `rust baseline` (in-process). Ignored by default (spawns Python / takes
-//! ~5s for dev-reference) — run with `cargo test --release -- --ignored`.
+//! the CLI agent forms `python <script>` (JSONL subprocess transport),
+//! `rust baseline`, and `rust reference` (in-process, against the
+//! golden-reference runs). Ignored by default (spawns Python / takes ~5s for
+//! dev-reference) — run with `cargo test --release -- --ignored`.
 
 mod common;
 
@@ -48,7 +49,33 @@ fn builtin_agent_matches_golden_decisions() {
     }
 }
 
+/// The reference teaching strategy (`rust reference`) against the
+/// `tests/golden-reference/` runs produced by the Python `reference_strategy.py`.
+#[test]
+#[ignore = "run explicitly"]
+fn reference_strategy_matches_golden_decisions() {
+    let reference_totals: [(&str, f64); 3] = [
+        ("demo-week", 5909.099093),
+        ("dev-reference", 12287.478365),
+        ("finals-preview", 8130.708559),
+    ];
+    for (name, expected_total) in reference_totals {
+        let golden = golden_dir(name)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("golden-reference")
+            .join(name);
+        run_gate_at(name, expected_total, &["rust".into(), "reference".into()], &golden);
+    }
+}
+
 fn run_gate(name: &str, expected_total: f64, agent_args: &[String]) {
+    run_gate_at(name, expected_total, agent_args, &golden_dir(name));
+}
+
+fn run_gate_at(name: &str, expected_total: f64, agent_args: &[String], golden: &Path) {
     assert!(SCENARIOS.contains(&name));
     let binary = env!("CARGO_BIN_EXE_agent-observer");
     let tag = agent_args.join("-").replace(['/', ' '], "_");
@@ -72,7 +99,7 @@ fn run_gate(name: &str, expected_total: f64, agent_args: &[String]) {
         String::from_utf8_lossy(&output.stderr)
     );
     let decisions = std::fs::read(out_dir.join("decisions.csv")).unwrap();
-    let golden = std::fs::read(golden_dir(name).join("decisions.csv")).unwrap();
+    let golden = std::fs::read(golden.join("decisions.csv")).unwrap();
     assert_eq!(
         decisions, golden,
         "{name}: decisions.csv not byte-identical"

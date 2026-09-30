@@ -1,10 +1,11 @@
-//! In-process deterministic agent — port of `agent/decision_graph.py`
+//! Shared deterministic decision pipeline — port of `agent/decision_graph.py`
 //! (deterministic path only: no LLM, no LangGraph) plus the
 //! `minimal_agent.py`/`protocol.py` response envelope.
 //!
-//! The agent receives the exact snapshot `serde_json::Value` the workflow would
-//! send over the wire, and returns the exact response envelope the Python agent
-//! would print — so behavior is provably identical to the subprocess path.
+//! The pipeline is fixed (anomaly reports → fault-scope filter → previews →
+//! selection → detector suspect override → note_observation → envelope); only
+//! the candidate-selection step differs between strategies. `BuiltinAgent` is
+//! the baseline selector; `reference.rs` plugs in the worked teaching example.
 
 use std::time::Instant;
 
@@ -17,26 +18,93 @@ use crate::workflow::DecisionProvider;
 use super::anomaly::AnomalyDetector;
 use super::preview::{preview_actions, CandidatePreview};
 
+/// One picked action, mirroring the decision dict the graph's finalize stage
+/// produces.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Selection {
+    Wait {
+        reason: String,
+        source: &'static str,
+    },
+    Observe {
+        tile_id: String,
+        program: String,
+        request_id: String,
+        reason: String,
+        source: &'static str,
+    },
+}
+
+/// The candidate-selection step of the deterministic pipeline. Called with the
+/// ranked previews (possibly empty) and the (fault-filtered) snapshot.
+pub trait Selector {
+    fn select(
+        &mut self,
+        previews: &[CandidatePreview],
+        snapshot: &Value,
+        publication: &Value,
+    ) -> Selection;
+}
+
+/// Default policy: trust the platform ranking — observe previews[0].
+///
 /// The shipped `my_strategy.choose_action` returns `candidates[0]` with no
-/// reason, which the graph treats as agreement with the default ranking — so
-/// the deterministic path below is exactly what the shipped agent does.
+/// reason, which the Python graph treats as agreement with the default ranking
+/// (returns None) — so this selector is exactly what the shipped agent does.
 #[derive(Default)]
-pub struct BuiltinAgent {
+pub struct BaselineSelector;
+
+impl Selector for BaselineSelector {
+    fn select(&mut self, previews: &[CandidatePreview], _snapshot: &Value, _publication: &Value) -> Selection {
+        match previews.first() {
+            None => Selection::Wait {
+                reason: "no legal observable candidate can finish in its known window".to_string(),
+                source: "deterministic",
+            },
+            Some(best) => Selection::Observe {
+                tile_id: best.tile_id.clone(),
+                program: best.program.clone(),
+                request_id: best.request_id.clone(),
+                reason: "highest public current-snapshot estimate".to_string(),
+                source: "deterministic",
+            },
+        }
+    }
+}
+
+/// The deterministic agent facade: anomaly tracking plus one selection per
+/// snapshot. `S` is the selection strategy.
+pub struct DeterministicAgent<S> {
     initial_publication: Option<Value>,
     detector: Option<AnomalyDetector>,
+    selector: S,
 }
+
+impl<S: Default> Default for DeterministicAgent<S> {
+    fn default() -> Self {
+        Self { initial_publication: None, detector: None, selector: S::default() }
+    }
+}
+
+/// The baseline in-process strategy (`rust baseline`).
+pub type BuiltinAgent = DeterministicAgent<BaselineSelector>;
 
 impl BuiltinAgent {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
+impl<S> DeterministicAgent<S> {
+    pub fn with_selector(selector: S) -> Self {
+        Self { initial_publication: None, detector: None, selector }
+    }
+}
+
+impl<S: Selector> DeterministicAgent<S> {
     /// `MinimalDecisionAgent.decide`: one decision for one snapshot.
     pub fn decide(&mut self, snapshot: &Value) -> Result<Value> {
-        let Self {
-            initial_publication,
-            detector,
-        } = self;
+        let Self { initial_publication, detector, selector } = self;
         let publication = initial_publication
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
@@ -59,31 +127,25 @@ impl BuiltinAgent {
         let previews: Vec<CandidatePreview> = preview_actions(
             filtered.as_ref(),
             &publication["scoring_contract"],
-            if mechanics {
-                Some(&detector.bests)
-            } else {
-                None
-            },
+            if mechanics { Some(&detector.bests) } else { None },
         )?;
-        let mut decision = if previews.is_empty() {
-            json!({
+        let mut decision = match selector.select(&previews, filtered.as_ref(), publication) {
+            Selection::Wait { reason, source } => json!({
                 "action": "wait",
                 "tile_id": "",
                 "program": "",
                 "request_id": "",
-                "reason": "no legal observable candidate can finish in its known window",
-                "decision_source": "deterministic",
-            })
-        } else {
-            let best = &previews[0];
-            json!({
+                "reason": reason,
+                "decision_source": source,
+            }),
+            Selection::Observe { tile_id, program, request_id, reason, source } => json!({
                 "action": "observe",
-                "tile_id": best.tile_id,
-                "program": best.program,
-                "request_id": best.request_id,
-                "reason": "highest public current-snapshot estimate",
-                "decision_source": "deterministic",
-            })
+                "tile_id": tile_id,
+                "program": program,
+                "request_id": request_id,
+                "reason": reason,
+                "decision_source": source,
+            }),
         };
         // When nothing on the board gains anything, spend the slot confirming a
         // suspect tile: a second read separates permanent tags from weather edges.
@@ -108,11 +170,7 @@ impl BuiltinAgent {
                 decision["request_id"].as_str().unwrap_or(""),
             );
             let row = previews.iter().find(|row| {
-                (
-                    row.tile_id.as_str(),
-                    row.program.as_str(),
-                    row.request_id.as_str(),
-                ) == triple
+                (row.tile_id.as_str(), row.program.as_str(), row.request_id.as_str()) == triple
             });
             let expected = row.map(|row| detector.potential_of(row));
             let under_cold_wave = detector.under_cold_wave(filtered.as_ref());
@@ -139,7 +197,7 @@ impl BuiltinAgent {
     }
 }
 
-impl DecisionProvider for BuiltinAgent {
+impl<S: Selector> DecisionProvider for DeterministicAgent<S> {
     fn publish_initial(&mut self, publication: &Value) -> Result<()> {
         if publication["schema_version"].as_str()
             != Some(crate::contracts::INITIAL_PUBLICATION_VERSION)

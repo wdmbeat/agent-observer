@@ -119,6 +119,45 @@ Byte-parity holds for both agent paths: the external Python agent
 (`minimal_agent.py` via the JSONL transport, CLI form `python <script>`) and
 the native `rust baseline`.
 
+### `rust reference` — the teaching strategy
+
+A second native strategy ports the kit's `reference_strategy.py`
+(`src/agent/reference.rs`): trust the platform's gain-per-second ranking, and
+override it only when an end-of-game account is about to come due — a REQUIRED
+tile with at most `LAST_CHANCES` (=2) published windows left, or, when the
+score config carries a `coverage_bonus_weight` (competition scenarios), a
+rerank by immediate gain plus the marginal Jain-evenness gain of the tile's
+region. Two measured net-negative rules stay off behind module-level const
+toggles — flip them in the file to run the experiment:
+
+- `ENABLE_REQUEST_JUMP: bool = false` — jump requests expiring within
+  `EXPIRING_WITHIN_DAYS` (=1.0) days; measured to lose points on the shipped
+  scenarios (the jumped reward doesn't cover the science given up).
+- `ENABLE_QUOTA_RESCUE: bool = false` — rescue FLEXIBLE tiles in regions short
+  of `FLEXIBLE_QUOTA` (=4); structurally unfillable regions make this a
+  net loss too.
+
+The penalty constants (`MISS_REQUIRED`, `SHORT_FLEXIBLE`, `REQUEST_REWARD`,
+`REQUEST_MISS`) are module-level as well, for tweaking when the competition
+config changes. Per-run state lives in a `StrategyMemory` struct field, not
+globals. The pipeline (anomaly detection, fault-scope filtering, suspect
+override, feedback bookkeeping) is shared with `baseline`; only candidate
+selection differs.
+
+Golden runs of the Python `reference_strategy.py` (via `my_strategy.py`)
+live in `tests/golden-reference/<scenario>/`; the Rust port reproduces them
+byte-identically:
+
+| Scenario | `rust baseline` | `rust reference` (Python → Rust) |
+|---|---|---|
+| demo-week | 5909.099093 | 5909.099093 → 5909.099093 (identical trace) |
+| dev-reference | 12287.478365 | 12287.478365 → 12287.478365 (identical trace) |
+| finals-preview | 8214.257133 | 8130.708559 → 8130.708559 (identical trace) |
+
+Note the reference strategy is *worse* than baseline on finals-preview (64
+tiles): the docstring's +2% figure was measured on a 1600-tile competition
+scenario. The port is faithful to the Python behavior, not to the marketing.
+
 ## Tests
 
 ```
@@ -139,19 +178,26 @@ byte-for-byte and the total exactly) are `#[ignore]`d for speed; run them with:
 cargo test --release -- --ignored
 ```
 
-This covers both the Python-agent transport path (skipped if the Python kit
-checkout is not next to this crate) and the builtin agent.
+This covers the Python-agent transport path (skipped if the Python kit
+checkout is not next to this crate), the `rust baseline` agent, and the
+`rust reference` agent against the golden-reference runs.
 
 Scenarios are located via the `AGENT_OBSERVER_SCENARIOS` env var, defaulting
 to `../../agent-observer-starter-kit/scenarios` relative to this crate.
 
 ## Writing your own strategy
 
-Plug in at `src/agent/builtin.rs`: `BuiltinAgent::decide` receives the full
-decision snapshot as a `serde_json::Value` and returns the response envelope.
-The deterministic default is "observe the top-ranked preview"; the ranked
-candidates come from `preview_actions` in `src/agent/preview.rs`, where each
-`CandidatePreview` exposes:
+Plug in at `src/agent/`: implement the `Selector` trait
+(`src/agent/builtin.rs`) — one method, `select(&previews, &snapshot,
+&publication) -> Selection`, called once per decision with the ranked
+candidates — then add a case to the `Strategy` enum in
+`src/agent/strategy.rs`. `DeterministicAgent` runs the shared pipeline
+(anomaly reports, fault-scope filter, previews, detector suspect override,
+feedback bookkeeping, response envelope) around your selection; the anomaly
+detector needs no strategy-side work. `src/agent/reference.rs` is a worked
+example with toggleable rules. The deterministic default ("observe the
+top-ranked preview") and the ranked candidates come from `preview_actions` in
+`src/agent/preview.rs`, where each `CandidatePreview` exposes:
 
 - `tile_id`, `program`, `request_id`, `region_id`, `scheduling_class`,
   `nominal_exptime_seconds`
@@ -167,6 +213,6 @@ mechanics — `tile_last_finished` feedback and `fault_status` publications,
 which `AnomalyDetector` in `src/agent/anomaly.rs` turns into calibrated
 reports. Anomaly thresholds are env-overridable via `SAC_ANOMALY_*`.
 
-To try a strategy end-to-end: edit `decide`, then
-`cargo run --release -- run --scenario <scenario> --out out/mine rust baseline`
+To try a strategy end-to-end: add your selector, then
+`cargo run --release -- run --scenario <scenario> --out out/mine rust <name>`
 and compare `out/mine/score_report.json` against the baselines above.

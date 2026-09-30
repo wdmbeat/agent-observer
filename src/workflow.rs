@@ -923,7 +923,7 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     )?;
     agent_log.flush()?;
     let mut provider: Box<dyn DecisionProvider> = match &resolved {
-        crate::agent::ResolvedAgent::Builtin(strategy) => Box::new(strategy.build()),
+        crate::agent::ResolvedAgent::Builtin(strategy) => strategy.build(),
         crate::agent::ResolvedAgent::Subprocess { command, agent_dir } => {
             let (env, dotenv_keys) = crate::transport::build_agent_env(
                 agent_dir,
