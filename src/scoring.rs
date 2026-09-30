@@ -14,15 +14,15 @@ use serde_json::{json, Value};
 
 use crate::calendar::{load_slots, Slot};
 use crate::contracts::{
-    anomaly_mechanics_enabled, datetime_from_epoch, epoch_seconds, format_utc, json_f64,
-    json_i64, read_exact_csv, round6, sha256_file, write_text_lf,
-    DECISION_COLUMNS, REPORT_ACTIONS, TARGET_COLUMNS, TILE_ANOMALY_COLUMNS,
+    anomaly_mechanics_enabled, datetime_from_epoch, epoch_seconds, format_utc, json_f64, json_i64,
+    read_exact_csv, round6, sha256_file, write_text_lf, DECISION_COLUMNS, REPORT_ACTIONS,
+    TARGET_COLUMNS, TILE_ANOMALY_COLUMNS,
 };
 use crate::geometry::{load_tiles, Tile, TileGeometrySimulator};
 use crate::requests::{load_request_tiles, load_requests, ObservationRequest};
 use crate::weather::{
-    load_config as load_weather_config, load_events, load_forecasts, load_weather,
-    weather_quality, WeatherSimulator,
+    load_config as load_weather_config, load_events, load_forecasts, load_weather, weather_quality,
+    WeatherSimulator,
 };
 
 pub const PROGRAMS: [&str; 3] = ["DARK", "BRIGHT", "BACKUP"];
@@ -83,19 +83,32 @@ pub fn load_decisions(path: &Path, allow_reports: bool) -> Result<Vec<Decision>>
         if is_report && !allow_reports {
             bail!("{}: action must be observe or wait", item.decision_id);
         }
-        if item.action == "wait" && (!item.tile_id.is_empty() || !item.program.is_empty() || !item.request_id.is_empty()) {
-            bail!("{}: wait must not name tile, program, or request", item.decision_id);
+        if item.action == "wait"
+            && (!item.tile_id.is_empty() || !item.program.is_empty() || !item.request_id.is_empty())
+        {
+            bail!(
+                "{}: wait must not name tile, program, or request",
+                item.decision_id
+            );
         }
-        if item.action == "observe" && (item.tile_id.is_empty() || !PROGRAMS.contains(&item.program.as_str())) {
+        if item.action == "observe"
+            && (item.tile_id.is_empty() || !PROGRAMS.contains(&item.program.as_str()))
+        {
             bail!("{}: invalid observe fields", item.decision_id);
         }
         if is_report {
             let kind = report_kind(&item.action).unwrap();
             if !item.program.is_empty() || !item.request_id.is_empty() {
-                bail!("{}: report rows must not name program or request", item.decision_id);
+                bail!(
+                    "{}: report rows must not name program or request",
+                    item.decision_id
+                );
             }
             if (kind == "Instrument_Failure") == !item.tile_id.is_empty() {
-                bail!("{}: fault reports name no tile; tag reports require one", item.decision_id);
+                bail!(
+                    "{}: fault reports name no tile; tag reports require one",
+                    item.decision_id
+                );
             }
         }
         result.push(item);
@@ -132,10 +145,10 @@ pub struct Report {
 }
 
 pub fn load_score_config(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let config: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let config: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     if config.get("schema_version").and_then(Value::as_str) != Some("challenge-score-v3") {
         bail!("unsupported score config");
     }
@@ -151,14 +164,20 @@ pub fn load_score_config(path: &Path) -> Result<Value> {
 }
 
 /// Sum of target science weights per tile.
-pub fn load_tile_values(path: &Path, tiles: &HashMap<String, Tile>) -> Result<HashMap<String, f64>> {
+pub fn load_tile_values(
+    path: &Path,
+    tiles: &HashMap<String, Tile>,
+) -> Result<HashMap<String, f64>> {
     let rows = read_exact_csv(path, &TARGET_COLUMNS)?;
     let mut values: HashMap<String, f64> = HashMap::new();
     let mut seen = std::collections::HashSet::new();
     for row in &rows {
         let target_id = row[0].trim();
         let tile_id = row[1].trim();
-        if target_id.is_empty() || !seen.insert(target_id.to_string()) || !tiles.contains_key(tile_id) {
+        if target_id.is_empty()
+            || !seen.insert(target_id.to_string())
+            || !tiles.contains_key(tile_id)
+        {
             bail!("invalid targets catalog relation");
         }
         let value: f64 = row[5].trim().parse()?;
@@ -295,22 +314,39 @@ impl ChallengeScorer {
             .enumerate()
             .map(|(index, slot)| (slot.slot_id.clone(), index))
             .collect();
-        let tiles: HashMap<String, Tile> =
-            tiles.into_iter().map(|tile| (tile.tile_id.clone(), tile)).collect();
+        let tiles: HashMap<String, Tile> = tiles
+            .into_iter()
+            .map(|tile| (tile.tile_id.clone(), tile))
+            .collect();
         let requests = requests
             .into_iter()
             .map(|item| (item.request_id.clone(), item))
             .collect();
         let mechanics = anomaly_mechanics_enabled(&score_config);
-        let tag_config = score_config.get("anomaly_tags").cloned().unwrap_or(Value::Null);
+        let tag_config = score_config
+            .get("anomaly_tags")
+            .cloned()
+            .unwrap_or(Value::Null);
         let tag_factor = |key: &str, default: f64| {
-            tag_config.get(key).and_then(Value::as_f64).unwrap_or(default)
+            tag_config
+                .get(key)
+                .and_then(Value::as_f64)
+                .unwrap_or(default)
         };
-        let reporting = score_config.get("reporting").cloned().unwrap_or(Value::Null);
+        let reporting = score_config
+            .get("reporting")
+            .cloned()
+            .unwrap_or(Value::Null);
         let report_value = |key: &str, default: f64| {
-            reporting.get(key).and_then(Value::as_f64).unwrap_or(default)
+            reporting
+                .get(key)
+                .and_then(Value::as_f64)
+                .unwrap_or(default)
         };
-        let fault_response = score_config.get("fault_response").cloned().unwrap_or(Value::Null);
+        let fault_response = score_config
+            .get("fault_response")
+            .cloned()
+            .unwrap_or(Value::Null);
         let repair_days = fault_response
             .get("repair_duration_days")
             .and_then(Value::as_f64)
@@ -451,7 +487,11 @@ impl ChallengeScorer {
     }
 
     fn minimum_altitude(&self) -> f64 {
-        json_f64(&self.geometry.tile_config["geometry"], "minimum_altitude_deg").unwrap()
+        json_f64(
+            &self.geometry.tile_config["geometry"],
+            "minimum_altitude_deg",
+        )
+        .unwrap()
     }
 
     fn sample_at(&self, tile: &Tile, epoch: f64) -> crate::geometry::GeometrySample {
@@ -504,7 +544,12 @@ impl ChallengeScorer {
 
     /// Best-program score a repeat observation started at the cursor would earn
     /// under truth weather (0 when it cannot complete).
-    fn repeat_score_potential(&self, tile: &Tile, mut slot_index: usize, mut offset_seconds: i64) -> f64 {
+    fn repeat_score_potential(
+        &self,
+        tile: &Tile,
+        mut slot_index: usize,
+        mut offset_seconds: i64,
+    ) -> f64 {
         if slot_index >= self.slots.len() {
             return 0.0;
         }
@@ -519,7 +564,9 @@ impl ChallengeScorer {
             let start = slot.timestamp_utc + TimeDelta::seconds(offset_seconds);
             let seconds = remaining.min(slot.duration_seconds - offset_seconds);
             let midpoint_epoch = epoch_seconds(&start) + seconds as f64 / 2.0;
-            if !self.tile_legal(tile, start) || !self.tile_legal(tile, datetime_from_epoch(midpoint_epoch)) {
+            if !self.tile_legal(tile, start)
+                || !self.tile_legal(tile, datetime_from_epoch(midpoint_epoch))
+            {
                 return 0.0;
             }
             let conditions = self
@@ -530,9 +577,10 @@ impl ChallengeScorer {
                 return 0.0;
             }
             let geometry = self.sample_at(tile, midpoint_epoch);
-            let combined = weather_quality(&conditions, geometry.airmass, &self.weather.config, true)
-                .expect("airmass finite at legal altitude")
-                * geometry.lunar_quality_factor;
+            let combined =
+                weather_quality(&conditions, geometry.airmass, &self.weather.config, true)
+                    .expect("airmass finite at legal altitude")
+                    * geometry.lunar_quality_factor;
             let band_quality =
                 weather_quality(&conditions, geometry.airmass, &self.weather.config, false)
                     .expect("airmass finite at legal altitude")
@@ -565,7 +613,12 @@ impl ChallengeScorer {
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
-    fn can_complete_from(&self, tile: &Tile, mut slot_index: usize, mut offset_seconds: i64) -> bool {
+    fn can_complete_from(
+        &self,
+        tile: &Tile,
+        mut slot_index: usize,
+        mut offset_seconds: i64,
+    ) -> bool {
         if slot_index >= self.slots.len() {
             return false;
         }
@@ -579,7 +632,9 @@ impl ChallengeScorer {
             let start = slot.timestamp_utc + TimeDelta::seconds(offset_seconds);
             let seconds = remaining.min(slot.duration_seconds - offset_seconds);
             let midpoint_epoch = epoch_seconds(&start) + seconds as f64 / 2.0;
-            if !self.tile_legal(tile, start) || !self.tile_legal(tile, datetime_from_epoch(midpoint_epoch)) {
+            if !self.tile_legal(tile, start)
+                || !self.tile_legal(tile, datetime_from_epoch(midpoint_epoch))
+            {
                 return false;
             }
             let observable = self
@@ -625,11 +680,20 @@ impl ChallengeScorer {
         *self.wait_seconds.entry(category.to_string()).or_insert(0) += seconds;
         *self
             .wait_seconds
-            .entry(if avoidable { "avoidable" } else { "unavailable" }.to_string())
+            .entry(
+                if avoidable {
+                    "avoidable"
+                } else {
+                    "unavailable"
+                }
+                .to_string(),
+            )
             .or_insert(0) += seconds;
         if avoidable {
-            let per_second = json_f64(&self.config["penalties"], "avoidable_wait_per_second").unwrap();
-            self.penalties.add("avoidable_wait", seconds as f64 * per_second);
+            let per_second =
+                json_f64(&self.config["penalties"], "avoidable_wait_per_second").unwrap();
+            self.penalties
+                .add("avoidable_wait", seconds as f64 * per_second);
         }
         self.advance(seconds);
     }
@@ -648,7 +712,11 @@ impl ChallengeScorer {
             elapsed = slot.duration_seconds - self.offset_seconds;
             self.consume_wait(elapsed, "invalid");
         }
-        let key = if unsafe_ { "unsafe_observation" } else { "invalid_action" };
+        let key = if unsafe_ {
+            "unsafe_observation"
+        } else {
+            "invalid_action"
+        };
         let penalty = json_f64(&self.config["penalties"], key).unwrap();
         self.penalties.add(key, penalty);
         let action = json!({
@@ -789,7 +857,9 @@ impl ChallengeScorer {
         let slot = self.current_slot().cloned();
         let started = self.current_time();
         let (tile, slot, started) = match (tile, slot, started) {
-            (Some(tile), Some(slot), Some(started)) if PROGRAMS.contains(&decision.program.as_str()) => {
+            (Some(tile), Some(slot), Some(started))
+                if PROGRAMS.contains(&decision.program.as_str()) =>
+            {
                 (tile, slot, started)
             }
             _ => return Ok(self.invalid(decision, "invalid_observe", false)),
@@ -817,7 +887,8 @@ impl ChallengeScorer {
             return Ok(self.invalid(decision, "duplicate_tile", false));
         }
         let initial_weather =
-            self.weather.get_effective_conditions(&slot.slot_id, Some(&tile.tile_id), true)?;
+            self.weather
+                .get_effective_conditions(&slot.slot_id, Some(&tile.tile_id), true)?;
         if !initial_weather.is_observable {
             return Ok(self.invalid(decision, "unsafe_observation", true));
         }
@@ -861,7 +932,11 @@ impl ChallengeScorer {
             let lunar_quality = geometry.lunar_quality_factor;
             let combined_quality = atmospheric_quality * lunar_quality;
             let band = self.quality_band(
-                (if self.mechanics { band_quality } else { atmospheric_quality }) * lunar_quality,
+                (if self.mechanics {
+                    band_quality
+                } else {
+                    atmospheric_quality
+                }) * lunar_quality,
             );
             let base = self.tile_values[&tile.tile_id] * seconds as f64
                 / tile.nominal_exptime_seconds as f64
@@ -1004,7 +1079,8 @@ impl ChallengeScorer {
                 self.misreport_count += 1;
                 self.misreport_total += 1;
                 if self.misreport_count > self.misreport_allowance {
-                    self.penalties.add("fault_misreport", self.misreport_penalty);
+                    self.penalties
+                        .add("fault_misreport", self.misreport_penalty);
                 }
                 result = "misreport";
             }
@@ -1016,7 +1092,11 @@ impl ChallengeScorer {
                 "repair_complete_utc": repair_complete_utc,
             });
         }
-        let tag = if report.kind == "NOVA" { "nova" } else { "reddening" };
+        let tag = if report.kind == "NOVA" {
+            "nova"
+        } else {
+            "reddening"
+        };
         let key = (report.tile_id.clone(), tag.to_string());
         if self.tag_reports.contains_key(&key) {
             return json!({
@@ -1043,7 +1123,11 @@ impl ChallengeScorer {
                 .get(&tile_id)
                 .map(|tags| tags.contains(&tag))
                 .unwrap_or(false);
-            let delta = if correct { self.report_reward } else { -self.report_penalty };
+            let delta = if correct {
+                self.report_reward
+            } else {
+                -self.report_penalty
+            };
             reward_total += delta.max(0.0);
             penalty_total += (-delta).max(0.0);
             rows.push(json!({
@@ -1067,16 +1151,17 @@ impl ChallengeScorer {
             .tiles
             .values()
             .filter(|tile| {
-                tile.scheduling_class == "REQUIRED"
-                    && !self.completed_tiles.contains(&tile.tile_id)
+                tile.scheduling_class == "REQUIRED" && !self.completed_tiles.contains(&tile.tile_id)
             })
             .map(|tile| tile.tile_id.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
         let required_miss = json_f64(&self.config["penalties"], "required_miss").unwrap();
-        self.penalties
-            .set("required_miss", required_missing.len() as f64 * required_miss);
+        self.penalties.set(
+            "required_miss",
+            required_missing.len() as f64 * required_miss,
+        );
         let mut flexible: HashMap<String, i64> = HashMap::new();
         for tile_id in &self.completed_tiles {
             let tile = &self.tiles[tile_id];
@@ -1162,7 +1247,11 @@ impl ChallengeScorer {
             } else {
                 "active_incomplete"
             };
-            let reward = if completed { request.completion_reward } else { 0.0 };
+            let reward = if completed {
+                request.completion_reward
+            } else {
+                0.0
+            };
             let penalty = if expired && !completed && !excused {
                 request.miss_penalty
             } else {

@@ -35,7 +35,12 @@ fn compare(path: &str, expected: &Value, actual: &Value, mismatches: &mut Vec<St
                 return;
             }
             for key in expected.keys() {
-                compare(&format!("{path}.{key}"), &expected[key], &actual[key], mismatches);
+                compare(
+                    &format!("{path}.{key}"),
+                    &expected[key],
+                    &actual[key],
+                    mismatches,
+                );
             }
         }
         (Value::Array(expected), Value::Array(actual)) => {

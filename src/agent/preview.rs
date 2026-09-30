@@ -75,7 +75,10 @@ fn combined_quality(candidate: &Value, weather_interface: &Value) -> Result<(f64
     let mut atmospheric = number(&weather["transparency"], "transparency")?
         * number(&weather["sky_quality"], "sky quality")?
         / (number(&weather["seeing_arcsec"], "seeing")?
-            * airmass.powf(number(&weather_interface["airmass_exponent"], "airmass exponent")?));
+            * airmass.powf(number(
+                &weather_interface["airmass_exponent"],
+                "airmass exponent",
+            )?));
     atmospheric = atmospheric.min(number(
         &weather_interface["maximum_weather_quality"],
         "maximum weather quality",
@@ -147,16 +150,14 @@ pub fn preview_actions(
     let weather_interface = &scoring_contract["weather_score_interface"];
     let penalties = &score_config["penalties"];
     let bonuses = &score_config["program_bonus"];
-    let quota = score_config["flexible_quota_per_region"].as_i64().unwrap_or(0);
+    let quota = score_config["flexible_quota_per_region"]
+        .as_i64()
+        .unwrap_or(0);
     let empty_bests = HashMap::new();
     let best_scores = tile_best_scores.unwrap_or(&empty_bests);
     let flexible_progress = &snapshot["progress"]["flexible_completed_by_region"];
     let mut result = Vec::new();
-    for candidate in snapshot["candidate_tiles"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
+    for candidate in snapshot["candidate_tiles"].as_array().into_iter().flatten() {
         let weather = &candidate["effective_weather"];
         if !weather["is_observable"].as_bool().unwrap_or(false)
             || !known_window_can_finish(snapshot, candidate)?
@@ -199,8 +200,10 @@ pub fn preview_actions(
                 .unwrap_or(0)
                 < quota
         {
-            terminal_avoidance =
-                number(&penalties["flexible_shortfall_per_tile"], "flexible shortfall penalty")?;
+            terminal_avoidance = number(
+                &penalties["flexible_shortfall_per_tile"],
+                "flexible shortfall penalty",
+            )?;
         }
         let exposure = candidate["nominal_exptime_seconds"].as_i64().unwrap_or(0);
         if exposure <= 0 {

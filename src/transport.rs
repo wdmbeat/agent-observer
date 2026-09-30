@@ -42,8 +42,14 @@ pub fn is_global_deadline_expired(error: &anyhow::Error) -> bool {
     error.downcast_ref::<GlobalDeadlineExpired>().is_some()
 }
 
-pub const PROTECTED_KEYS: [&str; 6] =
-    ["PATH", "HOME", "TMPDIR", "LD_PRELOAD", "PYTHONPATH", "PYTHONSTARTUP"];
+pub const PROTECTED_KEYS: [&str; 6] = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LD_PRELOAD",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+];
 
 /// `^[A-Z][A-Z0-9_]{0,63}$`
 fn safe_env_key(key: &str) -> bool {
@@ -71,7 +77,10 @@ pub fn load_dotenv(path: &Path) -> BTreeMap<String, String> {
         let key = key.trim();
         let mut value = value.trim();
         let bytes = value.as_bytes();
-        if bytes.len() >= 2 && bytes[0] == bytes[bytes.len() - 1] && (bytes[0] == b'\'' || bytes[0] == b'"') {
+        if bytes.len() >= 2
+            && bytes[0] == bytes[bytes.len() - 1]
+            && (bytes[0] == b'\'' || bytes[0] == b'"')
+        {
             value = &value[1..value.len() - 1];
         }
         if safe_env_key(key) {
@@ -100,9 +109,15 @@ pub fn build_agent_env(
         ("PYTHONUNBUFFERED".to_string(), "1".to_string()),
         ("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string()),
         ("PYTHONIOENCODING".to_string(), "utf-8".to_string()),
-        ("PARTICIPANT_PROTOCOL".to_string(), protocol_version.to_string()),
+        (
+            "PARTICIPANT_PROTOCOL".to_string(),
+            protocol_version.to_string(),
+        ),
         ("SAC_SCENARIO".to_string(), scenario_slug.to_string()),
-        ("SAC_WALLCLOCK_SECONDS".to_string(), format!("{}", wallclock as i64)),
+        (
+            "SAC_WALLCLOCK_SECONDS".to_string(),
+            format!("{}", wallclock as i64),
+        ),
         ("SAC_LOCAL_RUNNER".to_string(), "1".to_string()),
     ];
     let dotenv = load_dotenv(&agent_dir.join(".env"));
@@ -220,14 +235,19 @@ impl AgentProcess {
                 .lock()
                 .map_err(|error| anyhow!("stdin lock poisoned: {error}"))
                 .and_then(|mut guard| {
-                    guard.write_all(&data).and_then(|_| guard.flush()).map_err(Into::into)
+                    guard
+                        .write_all(&data)
+                        .and_then(|_| guard.flush())
+                        .map_err(Into::into)
                 });
             let _ = done_tx.send(result);
         });
         let remaining = deadline.saturating_duration_since(Instant::now());
         match done_rx.recv_timeout(remaining) {
             Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(anyhow!("agent exited before reading the next message ({error})")),
+            Ok(Err(error)) => Err(anyhow!(
+                "agent exited before reading the next message ({error})"
+            )),
             Err(_) => {
                 let _ = self.close(true);
                 Err(GlobalDeadlineExpired.into())
@@ -240,8 +260,8 @@ impl AgentProcess {
             if let Some(position) = self.stdout_buffer.iter().position(|byte| *byte == b'\n') {
                 let mut line: Vec<u8> = self.stdout_buffer.drain(..=position).collect();
                 line.pop();
-                let payload: Value = serde_json::from_slice(&line)
-                    .context("agent response is not valid JSON")?;
+                let payload: Value =
+                    serde_json::from_slice(&line).context("agent response is not valid JSON")?;
                 if !payload.is_object() {
                     bail!("agent response must be a JSON object");
                 }

@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+
+use agent_observer::agent::{AgentSpec, Strategy};
 
 #[derive(Parser)]
 #[command(
@@ -16,19 +18,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run an agent subprocess against a scenario (JSON-Lines transport)
+    /// Run an agent against a scenario and score the trace
+    #[command(after_long_help = RUN_EXAMPLES)]
     Run {
         /// Scenario directory containing config/ and outputs/reference/
         #[arg(long)]
         scenario: PathBuf,
-        /// Agent command string, spawned via `sh -c` (e.g. "python3 /path/minimal_agent.py"),
-        /// or the keyword `builtin` for the native deterministic agent (no subprocess)
-        #[arg(long)]
-        agent: String,
-        /// Working directory for the agent and source of its .env (default:
-        /// directory of the first path-like token in --agent, else cwd)
-        #[arg(long)]
-        agent_dir: Option<PathBuf>,
         /// Output directory for decisions.csv, workflow_result.json, score_report.json, agent.log
         #[arg(long)]
         out: PathBuf,
@@ -44,6 +39,9 @@ enum Commands {
         /// Print only the final JSON summary
         #[arg(long)]
         quiet: bool,
+        /// Which agent to drive
+        #[command(subcommand)]
+        agent: AgentCommand,
     },
     /// Score a decisions CSV against a scenario
     Score {
@@ -61,36 +59,73 @@ enum Commands {
     },
 }
 
-/// Directory of the first token in the command that names an existing file.
-fn default_agent_dir(command: &str) -> PathBuf {
-    for token in command.split_whitespace() {
-        let path = PathBuf::from(token);
-        if path.is_file() {
-            if let Some(parent) = path.parent() {
-                return parent.to_path_buf();
-            }
+#[derive(Subcommand)]
+enum AgentCommand {
+    /// Native in-process Rust strategy (no subprocess)
+    Rust(RustArgs),
+    /// Run a Python agent script via `python3 -B <script>`
+    Python(PythonArgs),
+    /// Any shell command, spawned via `sh -c`
+    External(ExternalArgs),
+}
+
+#[derive(Args)]
+struct RustArgs {
+    #[arg(value_enum)]
+    strategy: Strategy,
+}
+
+#[derive(Args)]
+struct PythonArgs {
+    /// Path to the agent entry script (e.g. minimal_agent.py)
+    script: PathBuf,
+    /// Working directory for the agent and source of its .env
+    /// (default: the script's parent directory)
+    #[arg(long)]
+    agent_dir: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ExternalArgs {
+    /// Shell command string (e.g. "python3 /path/agent.py")
+    command: String,
+    /// Working directory for the agent and source of its .env (default:
+    /// directory of the first path-like token in the command, else cwd)
+    #[arg(long)]
+    agent_dir: Option<PathBuf>,
+}
+
+impl AgentCommand {
+    fn into_spec(self) -> AgentSpec {
+        match self {
+            AgentCommand::Rust(args) => AgentSpec::Builtin(args.strategy),
+            AgentCommand::Python(args) => AgentSpec::Python(args.script, args.agent_dir),
+            AgentCommand::External(args) => AgentSpec::External(args.command, args.agent_dir),
         }
     }
-    PathBuf::from(".")
 }
+
+const RUN_EXAMPLES: &str = "\
+Examples:
+  agent-observer run --scenario <dir> --out out rust baseline
+  agent-observer run --scenario <dir> --out out python ../../agent-observer-starter-kit/agent/minimal_agent.py
+  agent-observer run --scenario <dir> --out out external \"python3 /path/to/agent.py\" --agent-dir /path/to";
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Run {
             scenario,
-            agent,
-            agent_dir,
             out,
             wallclock,
             init_timeout,
             keep_initial_publication,
             quiet,
+            agent,
         } => {
             let options = agent_observer::workflow::RunOptions {
                 scenario,
-                agent_dir: agent_dir.unwrap_or_else(|| default_agent_dir(&agent)),
-                agent_command: agent,
+                agent: agent.into_spec(),
                 out_dir: out,
                 wallclock,
                 init_timeout,

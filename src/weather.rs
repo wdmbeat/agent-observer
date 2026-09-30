@@ -15,8 +15,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::Value;
 
 use crate::contracts::{
-    epoch_seconds, format_utc, json_at, json_f64, json_i64, parse_bool, parse_utc,
-    read_exact_csv, round6, EVENT_COLUMNS, FORECAST_COLUMNS, WEATHER_COLUMNS,
+    epoch_seconds, format_utc, json_at, json_f64, json_i64, parse_bool, parse_utc, read_exact_csv,
+    round6, EVENT_COLUMNS, FORECAST_COLUMNS, WEATHER_COLUMNS,
 };
 use crate::geometry::{angular_separation_deg, TileGeometrySimulator};
 
@@ -40,7 +40,13 @@ pub const FORECASTABLE_CONDITIONS: [&str; 6] = [
     "cold_wave",
     "tornado",
 ];
-pub const SCOPE_TYPES: [&str; 5] = ["ALL", "REGION_SET", "SKY_CAP_ICRS", "HORIZON_SECTOR", "TILE_SET"];
+pub const SCOPE_TYPES: [&str; 5] = [
+    "ALL",
+    "REGION_SET",
+    "SKY_CAP_ICRS",
+    "HORIZON_SECTOR",
+    "TILE_SET",
+];
 
 /// Compact JSON with sorted keys — Python's
 /// `json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))`.
@@ -84,8 +90,8 @@ pub fn json_payload(value: &Value) -> String {
 /// Validate a `spatial_scope_payload` cell against its scope type; returns the
 /// parsed JSON object.
 pub fn parse_payload(scope_type: &str, raw: &str) -> Result<Value> {
-    let payload: Value =
-        serde_json::from_str(raw).map_err(|error| anyhow::anyhow!("invalid spatial_scope_payload: {error}"))?;
+    let payload: Value = serde_json::from_str(raw)
+        .map_err(|error| anyhow::anyhow!("invalid spatial_scope_payload: {error}"))?;
     let object = payload
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("spatial_scope_payload must be a JSON object"))?;
@@ -111,7 +117,11 @@ pub fn parse_payload(scope_type: &str, raw: &str) -> Result<Value> {
     }
     match scope_type {
         "REGION_SET" | "TILE_SET" => {
-            let key = if scope_type == "REGION_SET" { "region_ids" } else { "tile_ids" };
+            let key = if scope_type == "REGION_SET" {
+                "region_ids"
+            } else {
+                "tile_ids"
+            };
             let list = object[key]
                 .as_array()
                 .ok_or_else(|| anyhow::anyhow!("{key} must be a non-empty unique list"))?;
@@ -246,10 +256,10 @@ impl Forecast {
 
 /// Load and validate `config/weather_config.json`.
 pub fn load_config(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let config: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let config: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     let schema = config.get("schema_version").and_then(Value::as_str);
     if schema != Some(SCHEMA_VERSION) && schema != Some(LEGACY_SCHEMA_VERSION) {
         bail!("unsupported weather schema_version");
@@ -271,7 +281,9 @@ pub fn load_config(path: &Path) -> Result<Value> {
             .ok_or_else(|| anyhow::anyhow!("invalid event scope weights"))?;
         if scopes.is_empty()
             || !scopes.keys().all(|key| SCOPE_TYPES.contains(&key.as_str()))
-            || scopes.values().any(|weight| weight.as_f64().unwrap_or(0.0) <= 0.0)
+            || scopes
+                .values()
+                .any(|weight| weight.as_f64().unwrap_or(0.0) <= 0.0)
         {
             bail!("invalid event scope weights");
         }
@@ -328,7 +340,8 @@ pub fn load_weather(path: &Path) -> Result<Vec<WeatherSlot>> {
     let mut result = Vec::with_capacity(rows.len());
     for (index, row) in rows.iter().enumerate() {
         let line = index + 2;
-        let cell = |name: &str| row[WEATHER_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
+        let cell =
+            |name: &str| row[WEATHER_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
         let build = || -> Result<WeatherSlot> {
             Ok(WeatherSlot {
                 slot_id: cell("slot_id").to_string(),
@@ -363,7 +376,8 @@ pub fn load_events(path: &Path) -> Result<Vec<WeatherEvent>> {
     let mut result = Vec::with_capacity(rows.len());
     for (index, row) in rows.iter().enumerate() {
         let line = index + 2;
-        let cell = |name: &str| row[EVENT_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
+        let cell =
+            |name: &str| row[EVENT_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
         let build = || -> Result<WeatherEvent> {
             let scope = cell("spatial_scope_type");
             Ok(WeatherEvent {
@@ -393,7 +407,8 @@ pub fn load_forecasts(path: &Path) -> Result<Vec<Forecast>> {
     let mut result = Vec::with_capacity(rows.len());
     for (index, row) in rows.iter().enumerate() {
         let line = index + 2;
-        let cell = |name: &str| row[FORECAST_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
+        let cell =
+            |name: &str| row[FORECAST_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str();
         let build = || -> Result<Forecast> {
             let scope = cell("spatial_scope_type");
             Ok(Forecast {
@@ -408,7 +423,9 @@ pub fn load_forecasts(path: &Path) -> Result<Vec<Forecast>> {
                 spatial_scope_payload: parse_payload(scope, cell("spatial_scope_payload"))?,
                 severity: cell("severity").trim().parse::<f64>()?,
                 probability: cell("probability").trim().parse::<f64>()?,
-                start_uncertainty_seconds: cell("start_uncertainty_seconds").trim().parse::<i64>()?,
+                start_uncertainty_seconds: cell("start_uncertainty_seconds")
+                    .trim()
+                    .parse::<i64>()?,
                 end_uncertainty_seconds: cell("end_uncertainty_seconds").trim().parse::<i64>()?,
             })
         };
@@ -472,7 +489,15 @@ impl WeatherSimulator {
                 bail!("weather slot IDs are not unique");
             }
         }
-        Ok(Self { weather, forecasts, events, config, geometry, end_overrides: HashMap::new(), by_slot })
+        Ok(Self {
+            weather,
+            forecasts,
+            events,
+            config,
+            geometry,
+            end_overrides: HashMap::new(),
+            by_slot,
+        })
     }
 
     fn event_active(&self, event: &WeatherEvent, slot: &WeatherSlot) -> bool {
@@ -502,7 +527,10 @@ impl WeatherSimulator {
         match event.spatial_scope_type.as_str() {
             "REGION_SET" => Ok(payload["region_ids"]
                 .as_array()
-                .map(|ids| ids.iter().any(|id| id.as_str() == Some(tile.region_id.as_str())))
+                .map(|ids| {
+                    ids.iter()
+                        .any(|id| id.as_str() == Some(tile.region_id.as_str()))
+                })
                 .unwrap_or(false)),
             "TILE_SET" => Ok(payload["tile_ids"]
                 .as_array()
@@ -523,13 +551,15 @@ impl WeatherSimulator {
                     &geometry.tile_config,
                     &geometry.calendar_config,
                 )?;
-                Ok(json_f64(payload, "min_altitude_deg")? <= sample.altitude_deg
-                    && sample.altitude_deg <= json_f64(payload, "max_altitude_deg")?
-                    && azimuth_inside(
-                        sample.azimuth_deg,
-                        json_f64(payload, "azimuth_start_deg")?,
-                        json_f64(payload, "azimuth_end_deg")?,
-                    ))
+                Ok(
+                    json_f64(payload, "min_altitude_deg")? <= sample.altitude_deg
+                        && sample.altitude_deg <= json_f64(payload, "max_altitude_deg")?
+                        && azimuth_inside(
+                            sample.azimuth_deg,
+                            json_f64(payload, "azimuth_start_deg")?,
+                            json_f64(payload, "azimuth_end_deg")?,
+                        ),
+                )
             }
             _ => Ok(false),
         }
@@ -601,12 +631,18 @@ impl WeatherSimulator {
             instrument_efficiency *= event.instrument_efficiency_multiplier;
         }
         let quality = json_at(&self.config, "quality")?;
-        payload.seeing_arcsec =
-            Some(clip(payload.seeing_arcsec.unwrap() * seeing, json_at(quality, "seeing_arcsec")?)?);
-        payload.transparency =
-            Some(clip(payload.transparency.unwrap() * transparency, json_at(quality, "transparency")?)?);
-        payload.sky_quality =
-            Some(clip(payload.sky_quality.unwrap() * sky_quality, json_at(quality, "sky_quality")?)?);
+        payload.seeing_arcsec = Some(clip(
+            payload.seeing_arcsec.unwrap() * seeing,
+            json_at(quality, "seeing_arcsec")?,
+        )?);
+        payload.transparency = Some(clip(
+            payload.transparency.unwrap() * transparency,
+            json_at(quality, "transparency")?,
+        )?);
+        payload.sky_quality = Some(clip(
+            payload.sky_quality.unwrap() * sky_quality,
+            json_at(quality, "sky_quality")?,
+        )?);
         payload.instrument_efficiency = Some(clip(
             payload.instrument_efficiency.unwrap() * instrument_efficiency,
             json_at(quality, "instrument_efficiency")?,
@@ -640,10 +676,13 @@ impl WeatherSimulator {
         let mut visible: Vec<&Forecast> = latest
             .values()
             .copied()
-            .filter(|item| item.predicted_end_utc > as_of_utc && item.predicted_start_utc < horizon_end)
+            .filter(|item| {
+                item.predicted_end_utc > as_of_utc && item.predicted_start_utc < horizon_end
+            })
             .collect();
         visible.sort_by(|left, right| {
-            (left.predicted_start_utc, &left.event_id).cmp(&(right.predicted_start_utc, &right.event_id))
+            (left.predicted_start_utc, &left.event_id)
+                .cmp(&(right.predicted_start_utc, &right.event_id))
         });
         Ok(visible.into_iter().map(Forecast::public_dict).collect())
     }
@@ -673,7 +712,6 @@ pub fn weather_quality(
     };
     let interface = json_at(config, "score_interface")?;
     let raw = efficiency * weather.transparency.unwrap() * weather.sky_quality.unwrap()
-        / (weather.seeing_arcsec.unwrap()
-            * airmass.powf(json_f64(interface, "airmass_exponent")?));
+        / (weather.seeing_arcsec.unwrap() * airmass.powf(json_f64(interface, "airmass_exponent")?));
     Ok(raw.min(json_f64(interface, "maximum_weather_quality")?))
 }

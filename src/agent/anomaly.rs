@@ -102,7 +102,10 @@ impl AnomalyDetector {
             if tile.get("ra_deg").is_some() && tile.get("dec_deg").is_some() {
                 tile_coords.insert(
                     tile["tile_id"].as_str().unwrap_or("").to_string(),
-                    (value_f64(&tile["ra_deg"], 0.0), value_f64(&tile["dec_deg"], 0.0)),
+                    (
+                        value_f64(&tile["ra_deg"], 0.0),
+                        value_f64(&tile["dec_deg"], 0.0),
+                    ),
                 );
             }
         }
@@ -166,7 +169,10 @@ impl AnomalyDetector {
     pub fn under_cold_wave(&mut self, snapshot: &Value) -> bool {
         if let Some(weekly) = snapshot.get("weekly") {
             if weekly.is_object() && !weekly["weather_forecast"].is_null() {
-                self.forecasts = weekly["weather_forecast"].as_array().cloned().unwrap_or_default();
+                self.forecasts = weekly["weather_forecast"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
             }
         }
         let Some(now) = parse_utc_lenient(&snapshot["cursor"]["timestamp_utc"]) else {
@@ -238,7 +244,11 @@ impl AnomalyDetector {
                             // zero means the exposure was interrupted: no anomaly signal.
                             // a forecasted cold_wave is a public efficiency dip: not an anomaly either.
                             if realized > 0.0 && !pending.cold_wave {
-                                reports.extend(self.classify(&key.0, realized / expected, snapshot));
+                                reports.extend(self.classify(
+                                    &key.0,
+                                    realized / expected,
+                                    snapshot,
+                                ));
                             }
                         }
                     }
@@ -267,7 +277,10 @@ impl AnomalyDetector {
         let reads = self.tag_reads.entry(tile_id.to_string()).or_default();
         reads.push((band.map(str::to_string), night));
         if let Some(band) = band {
-            if !self.reported_tags.contains(&(tile_id.to_string(), band.to_string())) {
+            if !self
+                .reported_tags
+                .contains(&(tile_id.to_string(), band.to_string()))
+            {
                 let reads = &self.tag_reads[tile_id];
                 let hits: Vec<&String> = reads
                     .iter()
@@ -312,13 +325,16 @@ impl AnomalyDetector {
     }
 
     /// The best-ranked preview whose tile's latest read was in-band and unreported.
-    pub fn top_suspect<'a>(&self, previews: &'a [CandidatePreview]) -> Option<&'a CandidatePreview> {
+    pub fn top_suspect<'a>(
+        &self,
+        previews: &'a [CandidatePreview],
+    ) -> Option<&'a CandidatePreview> {
         previews.iter().find(|row| {
             let reads = self.tag_reads.get(&row.tile_id);
             match reads.and_then(|reads| reads.last()) {
-                Some((Some(band), _)) => {
-                    !self.reported_tags.contains(&(row.tile_id.clone(), band.clone()))
-                }
+                Some((Some(band), _)) => !self
+                    .reported_tags
+                    .contains(&(row.tile_id.clone(), band.clone())),
                 _ => false,
             }
         })
@@ -368,7 +384,10 @@ impl AnomalyDetector {
         if !active {
             return std::borrow::Cow::Borrowed(snapshot);
         }
-        let candidates = snapshot["candidate_tiles"].as_array().cloned().unwrap_or_default();
+        let candidates = snapshot["candidate_tiles"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
         let kept: Vec<Value> = candidates
             .iter()
             .filter(|candidate| !self.in_fault_scope(candidate))

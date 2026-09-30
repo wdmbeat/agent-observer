@@ -23,8 +23,8 @@ Run a survey with the built-in deterministic agent (no Python required):
 ```
 ./target/release/agent-observer run \
     --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
-    --agent builtin \
-    --out out/demo-week
+    --out out/demo-week \
+    rust baseline
 ```
 
 Run the Python reference agent through the JSON-Lines subprocess transport
@@ -34,9 +34,14 @@ Run the Python reference agent through the JSON-Lines subprocess transport
 ```
 ./target/release/agent-observer run \
     --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
-    --agent "python3 ../../agent-observer-starter-kit/agent/minimal_agent.py" \
-    --out out/demo-week-py
+    --out out/demo-week-py \
+    python ../../agent-observer-starter-kit/agent/minimal_agent.py
 ```
+
+(`python <script>` spawns `python3 -B <script>` with cwd = the script's
+parent, so `.env` loading keeps working; override with `--agent-dir`. The
+escape hatch for anything else is `external "<any shell command>"`, spawned
+via `sh -c`.)
 
 Score an existing trace (writes the report to stdout; use `--out <path>` to
 write a file, `--termination-reason` to override the default `trace_complete`):
@@ -50,9 +55,11 @@ write a file, `--termination-reason` to override the default `trace_complete`):
 `run` writes `decisions.csv`, `workflow_result.json`, `score_report.json`, and
 `agent.log` to `--out`, and prints a JSON summary on the last stdout line. Exit
 code is 0 for `survey_complete`/`global_wallclock_expired`, 2 otherwise.
-Useful flags: `--wallclock <secs>`, `--init-timeout <secs>` (30s default),
-`--keep-initial-publication`, `--quiet`, `--agent-dir <dir>` (cwd and `.env`
-source for external agents).
+The agent is chosen by a trailing subcommand — `rust <STRATEGY>`,
+`python <script.py> [--agent-dir <dir>]`, or
+`external "<cmd>" [--agent-dir <dir>]`. Other useful flags:
+`--wallclock <secs>`, `--init-timeout <secs>` (30s default),
+`--keep-initial-publication`, `--quiet`.
 
 ## What was ported
 
@@ -109,7 +116,8 @@ three bundled scenarios (golden outputs live in `tests/golden/<scenario>/`):
 | finals-preview | byte-identical (incl. anomaly report rows) | byte-identical | 8214.257133 |
 
 Byte-parity holds for both agent paths: the external Python agent
-(`minimal_agent.py` via the JSONL transport) and the native `--agent builtin`.
+(`minimal_agent.py` via the JSONL transport, CLI form `python <script>`) and
+the native `rust baseline`.
 
 ## Tests
 
@@ -160,5 +168,5 @@ which `AnomalyDetector` in `src/agent/anomaly.rs` turns into calibrated
 reports. Anomaly thresholds are env-overridable via `SAC_ANOMALY_*`.
 
 To try a strategy end-to-end: edit `decide`, then
-`cargo run --release -- run --scenario <scenario> --agent builtin --out out/mine`
+`cargo run --release -- run --scenario <scenario> --out out/mine rust baseline`
 and compare `out/mine/score_report.json` against the baselines above.

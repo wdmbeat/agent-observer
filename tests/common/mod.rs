@@ -13,9 +13,12 @@ pub const SCENARIOS: [&str; 3] = ["demo-week", "dev-reference", "finals-preview"
 /// Root of the Python starter kit's scenarios. Override with
 /// `AGENT_OBSERVER_SCENARIOS` when the checkout lives elsewhere.
 pub fn scenarios_root() -> PathBuf {
-    std::env::var("AGENT_OBSERVER_SCENARIOS").map(PathBuf::from).unwrap_or_else(|_| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../agent-observer-starter-kit/scenarios")
-    })
+    std::env::var("AGENT_OBSERVER_SCENARIOS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../agent-observer-starter-kit/scenarios")
+        })
 }
 
 pub fn scenario_dir(name: &str) -> PathBuf {
@@ -31,7 +34,9 @@ pub fn config_dir(name: &str) -> PathBuf {
 }
 
 pub fn golden_dir(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(name)
 }
 
 pub fn build_geometry(name: &str) -> TileGeometrySimulator {

@@ -33,7 +33,10 @@ impl BuiltinAgent {
 
     /// `MinimalDecisionAgent.decide`: one decision for one snapshot.
     pub fn decide(&mut self, snapshot: &Value) -> Result<Value> {
-        let Self { initial_publication, detector } = self;
+        let Self {
+            initial_publication,
+            detector,
+        } = self;
         let publication = initial_publication
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
@@ -56,7 +59,11 @@ impl BuiltinAgent {
         let previews: Vec<CandidatePreview> = preview_actions(
             filtered.as_ref(),
             &publication["scoring_contract"],
-            if mechanics { Some(&detector.bests) } else { None },
+            if mechanics {
+                Some(&detector.bests)
+            } else {
+                None
+            },
         )?;
         let mut decision = if previews.is_empty() {
             json!({
@@ -82,9 +89,7 @@ impl BuiltinAgent {
         // suspect tile: a second read separates permanent tags from weather edges.
         if mechanics {
             if let Some(suspect) = detector.top_suspect(&previews) {
-                if previews.is_empty()
-                    || previews[0].estimated_gain_per_second <= 0.0
-                {
+                if previews.is_empty() || previews[0].estimated_gain_per_second <= 0.0 {
                     decision = json!({
                         "action": "observe",
                         "tile_id": suspect.tile_id,
@@ -103,7 +108,11 @@ impl BuiltinAgent {
                 decision["request_id"].as_str().unwrap_or(""),
             );
             let row = previews.iter().find(|row| {
-                (row.tile_id.as_str(), row.program.as_str(), row.request_id.as_str()) == triple
+                (
+                    row.tile_id.as_str(),
+                    row.program.as_str(),
+                    row.request_id.as_str(),
+                ) == triple
             });
             let expected = row.map(|row| detector.potential_of(row));
             let under_cold_wave = detector.under_cold_wave(filtered.as_ref());

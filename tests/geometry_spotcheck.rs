@@ -94,8 +94,8 @@ fn segments_match_golden_score_reports() {
         let geometry = std::rc::Rc::new(build_geometry(name));
         let mut weather = build_weather(name, Some(geometry.clone()));
 
-        let report_text = std::fs::read_to_string(golden_dir(name).join("score_report.json"))
-            .unwrap();
+        let report_text =
+            std::fs::read_to_string(golden_dir(name).join("score_report.json")).unwrap();
         let report: Value = serde_json::from_str(&report_text).unwrap();
 
         // Reproduce the scorer's run-local overlay: acknowledged instrument
@@ -127,7 +127,11 @@ fn segments_match_golden_score_reports() {
         let sampled: Vec<_> = segments.iter().step_by(step).collect();
 
         for (tile_id, segment) in sampled {
-            let context = format!("{name} {} {}", tile_id, segment["slot_id"].as_str().unwrap());
+            let context = format!(
+                "{name} {} {}",
+                tile_id,
+                segment["slot_id"].as_str().unwrap()
+            );
             let start = parse_utc(segment["start_utc"].as_str().unwrap()).unwrap();
             let midpoint_epoch =
                 epoch_seconds(&start) + segment["duration_seconds"].as_f64().unwrap() / 2.0;
@@ -137,7 +141,11 @@ fn segments_match_golden_score_reports() {
                 .sample;
 
             let expected_airmass = segment["airmass"].as_f64().unwrap();
-            assert_eq!(round6(sample.airmass), expected_airmass, "{context} airmass");
+            assert_eq!(
+                round6(sample.airmass),
+                expected_airmass,
+                "{context} airmass"
+            );
 
             let expected_lunar = segment["lunar_quality_factor"].as_f64().unwrap();
             assert_eq!(
@@ -168,7 +176,10 @@ fn segments_match_golden_score_reports() {
                 .iter()
                 .map(|id| id.as_str().unwrap().to_string())
                 .collect();
-            assert_eq!(conditions.active_event_ids, expected_events, "{context} events");
+            assert_eq!(
+                conditions.active_event_ids, expected_events,
+                "{context} events"
+            );
 
             let atmospheric =
                 weather_quality(&conditions, sample.airmass, &weather.config, true).unwrap();

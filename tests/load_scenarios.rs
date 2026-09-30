@@ -21,12 +21,23 @@ fn all_scenarios_load() {
 
         let nights = calendar::load_nights(&reference.join("night_calendar.csv")).unwrap();
         let slots = calendar::load_slots(&reference.join("slots.csv")).unwrap();
-        assert!(!nights.is_empty() && !slots.is_empty(), "{name}: empty calendar");
+        assert!(
+            !nights.is_empty() && !slots.is_empty(),
+            "{name}: empty calendar"
+        );
 
         // Slot counts and night durations must be self-consistent.
         for night in &nights {
-            let owned: Vec<_> = slots.iter().filter(|s| s.night_id == night.night_id).collect();
-            assert_eq!(owned.len() as i64, night.slot_count, "{name} {}", night.night_id);
+            let owned: Vec<_> = slots
+                .iter()
+                .filter(|s| s.night_id == night.night_id)
+                .collect();
+            assert_eq!(
+                owned.len() as i64,
+                night.slot_count,
+                "{name} {}",
+                night.night_id
+            );
             assert_eq!(
                 owned.iter().map(|s| s.duration_seconds).sum::<i64>(),
                 night.night_seconds(),
@@ -41,7 +52,11 @@ fn all_scenarios_load() {
         geometry::load_json(&config.join("calendar_config.json")).unwrap();
 
         let weather_rows = weather::load_weather(&reference.join("weather.csv")).unwrap();
-        assert_eq!(weather_rows.len(), slots.len(), "{name}: weather/slot count");
+        assert_eq!(
+            weather_rows.len(),
+            slots.len(),
+            "{name}: weather/slot count"
+        );
         weather::load_events(&reference.join("weather_events.csv")).unwrap();
         weather::load_forecasts(&reference.join("weather_forecasts.csv")).unwrap();
         weather::load_config(&config.join("weather_config.json")).unwrap();

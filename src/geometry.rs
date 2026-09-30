@@ -63,10 +63,10 @@ impl Tile {
 
 /// Load and validate `config/tile_config.json`.
 pub fn load_config(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let config: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let config: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     validate_config(&config)?;
     Ok(config)
 }
@@ -74,8 +74,8 @@ pub fn load_config(path: &Path) -> Result<Value> {
 /// Read a JSON config without validation (mirrors how the Python runtime reads
 /// `calendar_config.json` via plain `json.load`).
 pub fn load_json(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
@@ -201,7 +201,10 @@ pub fn load_tiles(path: &Path) -> Result<Vec<Tile>> {
         };
         let tile = build().with_context(|| format!("{}: row {line}", path.display()))?;
         if tile.tile_id.is_empty() || !seen.insert(tile.tile_id.clone()) {
-            bail!("{}: row {line}: tile_id must be non-empty and unique", path.display());
+            bail!(
+                "{}: row {line}: tile_id must be non-empty and unique",
+                path.display()
+            );
         }
         if tile.scheduling_class != "REQUIRED" && tile.scheduling_class != "FLEXIBLE" {
             bail!("{}: row {line}: invalid scheduling_class", path.display());
@@ -212,7 +215,10 @@ pub fn load_tiles(path: &Path) -> Result<Vec<Tile>> {
             bail!("{}: row {line}: invalid coordinates", path.display());
         }
         if tile.available_until_utc <= tile.available_from_utc {
-            bail!("{}: row {line}: empty availability interval", path.display());
+            bail!(
+                "{}: row {line}: empty availability interval",
+                path.display()
+            );
         }
         result.push(tile);
     }
@@ -233,11 +239,10 @@ pub fn sun_equatorial_deg(epoch: f64) -> (f64, f64) {
     let days = julian_date(epoch) - 2451545.0;
     let mean_longitude = (280.460 + 0.9856474 * days).rem_euclid(360.0);
     let mean_anomaly = (357.528 + 0.9856003 * days).rem_euclid(360.0).to_radians();
-    let longitude = (mean_longitude
-        + 1.915 * mean_anomaly.sin()
-        + 0.020 * (2.0 * mean_anomaly).sin())
-    .rem_euclid(360.0)
-    .to_radians();
+    let longitude =
+        (mean_longitude + 1.915 * mean_anomaly.sin() + 0.020 * (2.0 * mean_anomaly).sin())
+            .rem_euclid(360.0)
+            .to_radians();
     let obliquity = (23.439 - 0.0000004 * days).to_radians();
     (
         (obliquity.cos() * longitude.sin())
@@ -257,18 +262,22 @@ pub fn moon_equatorial_deg(epoch: f64) -> (f64, f64) {
     let latitude = 5.128f64.to_radians() * argument_latitude.sin();
     let obliquity = (23.439 - 0.0000004 * days).to_radians();
     let x = longitude.cos() * latitude.cos();
-    let y = longitude.sin() * latitude.cos() * obliquity.cos()
-        - latitude.sin() * obliquity.sin();
-    let z = longitude.sin() * latitude.cos() * obliquity.sin()
-        + latitude.sin() * obliquity.cos();
-    (y.atan2(x).to_degrees().rem_euclid(360.0), z.asin().to_degrees())
+    let y = longitude.sin() * latitude.cos() * obliquity.cos() - latitude.sin() * obliquity.sin();
+    let z = longitude.sin() * latitude.cos() * obliquity.sin() + latitude.sin() * obliquity.cos();
+    (
+        y.atan2(x).to_degrees().rem_euclid(360.0),
+        z.asin().to_degrees(),
+    )
 }
 
 pub fn angular_separation_deg(ra1: f64, dec1: f64, ra2: f64, dec2: f64) -> f64 {
-    let (ra1r, dec1r, ra2r, dec2r) =
-        (ra1.to_radians(), dec1.to_radians(), ra2.to_radians(), dec2.to_radians());
-    let cosine =
-        dec1r.sin() * dec2r.sin() + dec1r.cos() * dec2r.cos() * (ra1r - ra2r).cos();
+    let (ra1r, dec1r, ra2r, dec2r) = (
+        ra1.to_radians(),
+        dec1.to_radians(),
+        ra2.to_radians(),
+        dec2.to_radians(),
+    );
+    let cosine = dec1r.sin() * dec2r.sin() + dec1r.cos() * dec2r.cos() * (ra1r - ra2r).cos();
     cosine.clamp(-1.0, 1.0).acos().to_degrees()
 }
 
@@ -278,8 +287,8 @@ pub fn normalized_airmass(altitude_deg: f64) -> f64 {
         return f64::INFINITY;
     }
     let zenith_deg = 90.0 - altitude_deg;
-    let raw = 1.0
-        / (zenith_deg.to_radians().cos() + 0.50572 * (96.07995 - zenith_deg).powf(-1.6364));
+    let raw =
+        1.0 / (zenith_deg.to_radians().cos() + 0.50572 * (96.07995 - zenith_deg).powf(-1.6364));
     let zenith_raw = 1.0 / (1.0 + 0.50572 * 96.07995f64.powf(-1.6364));
     raw / zenith_raw
 }
@@ -308,22 +317,24 @@ pub fn geometry_sample(
     let hour_angle_deg =
         (local_sidereal_deg(epoch, longitude) - tile.ra_deg + 180.0).rem_euclid(360.0) - 180.0;
     let hour_angle = hour_angle_deg.to_radians();
-    let sin_altitude = latitude.sin() * declination.sin()
-        + latitude.cos() * declination.cos() * hour_angle.cos();
+    let sin_altitude =
+        latitude.sin() * declination.sin() + latitude.cos() * declination.cos() * hour_angle.cos();
     let altitude = sin_altitude.clamp(-1.0, 1.0).asin();
     let cos_altitude = altitude.cos().max(1e-12);
     let sin_azimuth = -hour_angle.sin() * declination.cos() / cos_altitude;
     let cos_azimuth = (declination.sin() - altitude.sin() * latitude.sin())
         / (cos_altitude * latitude.cos().max(1e-12));
-    let azimuth = sin_azimuth.atan2(cos_azimuth).to_degrees().rem_euclid(360.0);
+    let azimuth = sin_azimuth
+        .atan2(cos_azimuth)
+        .to_degrees()
+        .rem_euclid(360.0);
     let altitude_deg = altitude.to_degrees();
 
     let (sun_ra, sun_dec) = sun_equatorial_deg(epoch);
     let (moon_ra, moon_dec) = moon_equatorial_deg(epoch);
     let sun_moon_separation = angular_separation_deg(sun_ra, sun_dec, moon_ra, moon_dec);
     let illumination = (1.0 - sun_moon_separation.to_radians().cos()) / 2.0;
-    let tile_moon_separation =
-        angular_separation_deg(tile.ra_deg, tile.dec_deg, moon_ra, moon_dec);
+    let tile_moon_separation = angular_separation_deg(tile.ra_deg, tile.dec_deg, moon_ra, moon_dec);
     let moon_altitude =
         geometry_sample_without_lunar_coords(moon_ra, moon_dec, epoch, calendar_config)?.0;
     let lunar = json_at(tile_config, "lunar_model")?;
@@ -332,9 +343,10 @@ pub fn geometry_sample(
         .to_radians()
         .sin()
         .powf(json_f64(lunar, "altitude_exponent")?);
-    let angular_weight = (-tile_moon_separation / json_f64(lunar, "angular_decay_scale_deg")?).exp();
-    let lunar_quality = 1.0
-        - json_f64(lunar, "maximum_penalty")? * illumination * altitude_weight * angular_weight;
+    let angular_weight =
+        (-tile_moon_separation / json_f64(lunar, "angular_decay_scale_deg")?).exp();
+    let lunar_quality =
+        1.0 - json_f64(lunar, "maximum_penalty")? * illumination * altitude_weight * angular_weight;
     Ok(GeometrySample {
         altitude_deg,
         azimuth_deg: azimuth,
@@ -363,13 +375,13 @@ fn geometry_sample_without_lunar_coords(
     let site = json_at(calendar_config, "site")?;
     let latitude = json_f64(site, "latitude_deg")?.to_radians();
     let declination = dec_deg.to_radians();
-    let hour_angle_deg =
-        (local_sidereal_deg(epoch, json_f64(site, "longitude_deg")?) - ra_deg + 180.0)
-            .rem_euclid(360.0)
-            - 180.0;
+    let hour_angle_deg = (local_sidereal_deg(epoch, json_f64(site, "longitude_deg")?) - ra_deg
+        + 180.0)
+        .rem_euclid(360.0)
+        - 180.0;
     let hour_angle = hour_angle_deg.to_radians();
-    let sin_altitude = latitude.sin() * declination.sin()
-        + latitude.cos() * declination.cos() * hour_angle.cos();
+    let sin_altitude =
+        latitude.sin() * declination.sin() + latitude.cos() * declination.cos() * hour_angle.cos();
     let altitude = sin_altitude.clamp(-1.0, 1.0).asin();
     let cos_altitude = altitude.cos().max(1e-12);
     let sin_azimuth = -hour_angle.sin() * declination.cos() / cos_altitude;
@@ -377,7 +389,10 @@ fn geometry_sample_without_lunar_coords(
         / (cos_altitude * latitude.cos().max(1e-12));
     Ok((
         altitude.to_degrees(),
-        sin_azimuth.atan2(cos_azimuth).to_degrees().rem_euclid(360.0),
+        sin_azimuth
+            .atan2(cos_azimuth)
+            .to_degrees()
+            .rem_euclid(360.0),
     ))
 }
 
@@ -452,16 +467,28 @@ impl TileGeometrySimulator {
         nights: Vec<Night>,
         slots: Vec<Slot>,
     ) -> Self {
-        let tiles = tiles.into_iter().map(|tile| (tile.tile_id.clone(), tile)).collect();
+        let tiles = tiles
+            .into_iter()
+            .map(|tile| (tile.tile_id.clone(), tile))
+            .collect();
         let nights = nights
             .into_iter()
             .map(|night| (night.night_id.clone(), night))
             .collect();
         let mut slots_by_night: HashMap<String, Vec<Slot>> = HashMap::new();
         for slot in slots {
-            slots_by_night.entry(slot.night_id.clone()).or_default().push(slot);
+            slots_by_night
+                .entry(slot.night_id.clone())
+                .or_default()
+                .push(slot);
         }
-        Self { tiles, tile_config, calendar_config, nights, slots_by_night }
+        Self {
+            tiles,
+            tile_config,
+            calendar_config,
+            nights,
+            slots_by_night,
+        }
     }
 
     pub fn from_files(
@@ -502,7 +529,11 @@ impl TileGeometrySimulator {
         })
     }
 
-    pub fn get_tile_windows(&self, first_night: NaiveDate, days: usize) -> Result<Vec<TileWindowRow>> {
+    pub fn get_tile_windows(
+        &self,
+        first_night: NaiveDate,
+        days: usize,
+    ) -> Result<Vec<TileWindowRow>> {
         if days < 1 {
             bail!("days must be positive");
         }
@@ -521,8 +552,10 @@ impl TileGeometrySimulator {
         if !missing.is_empty() {
             bail!("requested nights outside calendar: {missing:?}");
         }
-        let minimum_altitude =
-            json_f64(json_at(&self.tile_config, "geometry")?, "minimum_altitude_deg")?;
+        let minimum_altitude = json_f64(
+            json_at(&self.tile_config, "geometry")?,
+            "minimum_altitude_deg",
+        )?;
         let mut rows = Vec::new();
         for night_id in &night_ids {
             let night = &self.nights[night_id];
@@ -555,7 +588,10 @@ impl TileGeometrySimulator {
                 let valid: Vec<&Vec<(Slot, GeometrySample)>> = groups
                     .iter()
                     .filter(|group| {
-                        group.iter().map(|item| item.0.duration_seconds).sum::<i64>()
+                        group
+                            .iter()
+                            .map(|item| item.0.duration_seconds)
+                            .sum::<i64>()
                             >= tile.nominal_exptime_seconds
                     })
                     .collect();
@@ -566,14 +602,13 @@ impl TileGeometrySimulator {
                     // min_by does the same.
                     let (best_slot, best_geometry) = group
                         .iter()
-                        .min_by(|left, right| {
-                            left.1.airmass.partial_cmp(&right.1.airmass).unwrap()
-                        })
+                        .min_by(|left, right| left.1.airmass.partial_cmp(&right.1.airmass).unwrap())
                         .map(|(slot, geometry)| (slot, geometry))
                         .unwrap();
                     let airmass_sum = group.iter().fold(0.0, |sum, item| sum + item.1.airmass);
-                    let lunar_sum =
-                        group.iter().fold(0.0, |sum, item| sum + item.1.lunar_quality_factor);
+                    let lunar_sum = group
+                        .iter()
+                        .fold(0.0, |sum, item| sum + item.1.lunar_quality_factor);
                     let minimum_lunar = group
                         .iter()
                         .min_by(|left, right| {

@@ -89,9 +89,7 @@ pub fn load_nights(path: &Path) -> Result<Vec<Night>> {
                 slot_count: cell("slot_count").trim().parse::<i64>()?,
             })
         };
-        result.push(
-            build().with_context(|| format!("{}: row {line}", path.display()))?,
-        );
+        result.push(build().with_context(|| format!("{}: row {line}", path.display()))?);
     }
     Ok(result)
 }
@@ -110,9 +108,7 @@ pub fn load_slots(path: &Path) -> Result<Vec<Slot>> {
                 duration_seconds: cell("duration_seconds").trim().parse::<i64>()?,
             })
         };
-        result.push(
-            build().with_context(|| format!("{}: row {line}", path.display()))?,
-        );
+        result.push(build().with_context(|| format!("{}: row {line}", path.display()))?);
     }
     Ok(result)
 }

@@ -74,10 +74,10 @@ pub struct TileRequirement {
 
 /// Load and validate `config/request_config.json`.
 pub fn load_config(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let config: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let config: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     if config.get("schema_version").and_then(Value::as_str) != Some(SCHEMA_VERSION) {
         bail!("unsupported request schema_version");
     }
@@ -125,7 +125,11 @@ pub fn load_request_tiles(path: &Path) -> Result<BTreeMap<String, BTreeMap<Strin
     for (index, row) in rows.iter().enumerate() {
         let line = index + 2;
         let cell = |name: &str| {
-            row[REQUEST_TILE_COLUMNS.iter().position(|c| *c == name).unwrap()].as_str()
+            row[REQUEST_TILE_COLUMNS
+                .iter()
+                .position(|c| *c == name)
+                .unwrap()]
+            .as_str()
         };
         let request_id = cell("request_id").to_string();
         let tile_id = cell("tile_id").to_string();
@@ -157,18 +161,26 @@ impl ObservationRequestSimulator {
         requests.sort_by(|left, right| {
             (left.issued_at_utc, &left.request_id).cmp(&(right.issued_at_utc, &right.request_id))
         });
-        let known: std::collections::BTreeSet<&str> =
-            requests.iter().map(|item| item.request_id.as_str()).collect();
+        let known: std::collections::BTreeSet<&str> = requests
+            .iter()
+            .map(|item| item.request_id.as_str())
+            .collect();
         let linked: std::collections::BTreeSet<&str> =
             request_tiles.keys().map(String::as_str).collect();
         if known != linked {
             bail!("request and request-tile IDs do not match");
         }
-        Ok(Self { requests, request_tiles })
+        Ok(Self {
+            requests,
+            request_tiles,
+        })
     }
 
     pub fn from_files(requests_path: &Path, request_tiles_path: &Path) -> Result<Self> {
-        Self::new(load_requests(requests_path)?, load_request_tiles(request_tiles_path)?)
+        Self::new(
+            load_requests(requests_path)?,
+            load_request_tiles(request_tiles_path)?,
+        )
     }
 
     pub fn get_observation_requests(

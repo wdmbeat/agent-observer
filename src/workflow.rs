@@ -13,8 +13,8 @@ use serde_json::{json, Map, Value};
 use crate::contracts::{
     epoch_seconds, format_utc, parse_utc, read_exact_csv, round6, write_exact_csv,
     ACCEPTED_PROTOCOL_VERSIONS, DECISION_COLUMNS, DECISION_SNAPSHOT_VERSION,
-    INITIAL_PUBLICATION_VERSION, LEGACY_DECISION_SNAPSHOT_VERSION, REPORT_KINDS,
-    TARGET_COLUMNS, WORKFLOW_RESULT_VERSION,
+    INITIAL_PUBLICATION_VERSION, LEGACY_DECISION_SNAPSHOT_VERSION, REPORT_KINDS, TARGET_COLUMNS,
+    WORKFLOW_RESULT_VERSION,
 };
 use crate::geometry::TileWindowRow;
 use crate::requests::ObservationRequestSimulator;
@@ -49,8 +49,11 @@ impl DecisionProvider for AgentProcess {
 }
 
 /// Outcomes that refresh `tile_last_finished` feedback.
-pub const FEEDBACK_OUTCOMES: [&str; 3] =
-    ["completed", "weather_interrupted", "geometry_or_night_interrupted"];
+pub const FEEDBACK_OUTCOMES: [&str; 3] = [
+    "completed",
+    "weather_interrupted",
+    "geometry_or_night_interrupted",
+];
 
 /// The agent-visible weather view never carries instrument_efficiency.
 fn public_weather(conditions: &Value) -> Value {
@@ -60,10 +63,10 @@ fn public_weather(conditions: &Value) -> Value {
 }
 
 pub fn load_workflow_config(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let config: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let config: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
     if config.get("schema_version").and_then(Value::as_str) != Some("challenge-workflow-v1") {
         bail!("unsupported workflow schema_version");
     }
@@ -91,7 +94,10 @@ fn tile_csv_row_json(tile: &crate::geometry::Tile) -> Value {
     map.insert("tile_id".into(), json!(cells[0]));
     map.insert("ra_deg".into(), json!(cells[1]));
     map.insert("dec_deg".into(), json!(cells[2]));
-    map.insert("nominal_exptime_seconds".into(), json!(cells[3].parse::<i64>().unwrap()));
+    map.insert(
+        "nominal_exptime_seconds".into(),
+        json!(cells[3].parse::<i64>().unwrap()),
+    );
     map.insert("region_id".into(), json!(cells[4]));
     map.insert("scheduling_class".into(), json!(cells[5]));
     map.insert("available_from_utc".into(), json!(cells[6]));
@@ -152,8 +158,14 @@ impl ChallengeWorkflow {
         let config = load_workflow_config(&root.join("config").join("workflow_config.json"))?;
         let scorer = ChallengeScorer::from_files(root)?;
         let requests = ObservationRequestSimulator::from_files(
-            &root.join("outputs").join("reference").join("observation_requests.csv"),
-            &root.join("outputs").join("reference").join("observation_request_tiles.csv"),
+            &root
+                .join("outputs")
+                .join("reference")
+                .join("observation_requests.csv"),
+            &root
+                .join("outputs")
+                .join("reference")
+                .join("observation_request_tiles.csv"),
         )?;
         let target_catalog = read_exact_csv(
             &root.join("outputs").join("reference").join("targets.csv"),
@@ -281,12 +293,17 @@ impl ChallengeWorkflow {
             let remaining_nights = ordered.len() - index;
             let days = (self.config["tile_window_horizon_days"].as_i64().unwrap() as usize)
                 .min(remaining_nights);
-            let windows = self.scorer.geometry.get_tile_windows(night.night_date, days)?;
+            let windows = self
+                .scorer
+                .geometry
+                .get_tile_windows(night.night_date, days)?;
             let forecast = self.scorer.weather.get_weather_forecast(
                 slot.timestamp_utc,
                 Some(self.config["weekly_horizon_days"].as_i64().unwrap()),
             )?;
-            let requests = self.requests.get_observation_requests(slot.timestamp_utc, false);
+            let requests = self
+                .requests
+                .get_observation_requests(slot.timestamp_utc, false);
             self.week_cache.insert(
                 slot.night_id.clone(),
                 json!({
@@ -400,10 +417,10 @@ impl ChallengeWorkflow {
                     && moment < parse_utc(&row.window_end_utc).unwrap()
             })
             .collect();
-        let minimum_altitude: f64 =
-            self.scorer.geometry.tile_config["geometry"]["minimum_altitude_deg"]
-                .as_f64()
-                .unwrap();
+        let minimum_altitude: f64 = self.scorer.geometry.tile_config["geometry"]
+            ["minimum_altitude_deg"]
+            .as_f64()
+            .unwrap();
         let mut candidates = Vec::new();
         for row in active_windows {
             let tile_id = &row.tile_id;
@@ -449,17 +466,18 @@ impl ChallengeWorkflow {
         } else {
             None
         };
-        let weekly = if night_index as i64 % self.config["weekly_horizon_days"].as_i64().unwrap() == 0
+        let weekly = if night_index as i64 % self.config["weekly_horizon_days"].as_i64().unwrap()
+            == 0
             && night_open
         {
             Some(self.weekly_publication(&slot)?)
         } else {
             None
         };
-        let site_weather = self
-            .scorer
-            .weather
-            .get_effective_conditions(&slot.slot_id, None, !self.mechanics)?;
+        let site_weather =
+            self.scorer
+                .weather
+                .get_effective_conditions(&slot.slot_id, None, !self.mechanics)?;
         let site_weather = serde_json::to_value(&site_weather)?;
         let site_weather = if self.mechanics {
             public_weather(&site_weather)
@@ -470,7 +488,9 @@ impl ChallengeWorkflow {
         for tile_id in &self.scorer.completed_tiles {
             let tile = &self.scorer.tiles[tile_id];
             if tile.scheduling_class == "FLEXIBLE" {
-                *flexible_by_region.entry(tile.region_id.clone()).or_insert(0) += 1;
+                *flexible_by_region
+                    .entry(tile.region_id.clone())
+                    .or_insert(0) += 1;
             }
         }
         let mut snapshot = json!({
@@ -693,7 +713,11 @@ impl ChallengeWorkflow {
     }
 
     /// Run the survey loop against a live agent transport.
-    pub fn run(&mut self, provider: &mut dyn DecisionProvider, wallclock_seconds: Option<f64>) -> Result<Value> {
+    pub fn run(
+        &mut self,
+        provider: &mut dyn DecisionProvider,
+        wallclock_seconds: Option<f64>,
+    ) -> Result<Value> {
         let initial = self.initial_publication();
         let budget = wallclock_seconds
             .unwrap_or_else(|| self.config["global_wallclock_seconds"].as_f64().unwrap());
@@ -802,8 +826,7 @@ impl ChallengeWorkflow {
     /// decisions.csv carries the whole trace, including report_* action rows.
     pub fn write_outputs(&self, output_dir: &Path, result: &Value) -> Result<()> {
         std::fs::create_dir_all(output_dir)?;
-        let rows: Vec<Vec<String>> =
-            self.committed.iter().map(Decision::csv_row).collect();
+        let rows: Vec<Vec<String>> = self.committed.iter().map(Decision::csv_row).collect();
         write_exact_csv(&output_dir.join("decisions.csv"), &DECISION_COLUMNS, &rows)?;
         crate::contracts::write_text_lf(
             &output_dir.join("workflow_result.json"),
@@ -816,9 +839,8 @@ impl ChallengeWorkflow {
 /// Options for the local-runner orchestration (`local_runner.py` analog).
 pub struct RunOptions {
     pub scenario: PathBuf,
-    /// Shell command string, spawned via `sh -c` with cwd = agent_dir.
-    pub agent_command: String,
-    pub agent_dir: PathBuf,
+    /// Typed agent selection; resolved to a native strategy or a subprocess.
+    pub agent: crate::agent::AgentSpec,
     pub out_dir: PathBuf,
     pub wallclock: Option<f64>,
     pub init_timeout: f64,
@@ -840,8 +862,15 @@ pub struct RunOutcome {
 /// platform does, then re-score the trace (port of `local_runner.py::main`).
 pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     let scenario = &options.scenario;
-    if !scenario.join("config").join("workflow_config.json").is_file() {
-        bail!("{} is not a scenario directory (missing config/workflow_config.json)", scenario.display());
+    if !scenario
+        .join("config")
+        .join("workflow_config.json")
+        .is_file()
+    {
+        bail!(
+            "{} is not a scenario directory (missing config/workflow_config.json)",
+            scenario.display()
+        );
     }
     let out_dir = &options.out_dir;
     std::fs::create_dir_all(out_dir)?;
@@ -849,9 +878,11 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     std::fs::create_dir_all(&scratch)?;
 
     let mut workflow = ChallengeWorkflow::new(scenario)?;
-    let wallclock = options
-        .wallclock
-        .unwrap_or_else(|| workflow.config["global_wallclock_seconds"].as_f64().unwrap());
+    let wallclock = options.wallclock.unwrap_or_else(|| {
+        workflow.config["global_wallclock_seconds"]
+            .as_f64()
+            .unwrap()
+    });
     if wallclock <= 0.0 {
         bail!("--wallclock must be positive");
     }
@@ -864,26 +895,21 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
                 .ok()
                 .and_then(|text| serde_json::from_str::<Value>(&text).ok())
                 .and_then(|config| {
-                    config.get("scenario_id").and_then(Value::as_str).map(str::to_string)
+                    config
+                        .get("scenario_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
                 })
         })
         .flatten()
-        .unwrap_or_else(|| {
-            scenario.file_name().unwrap().to_string_lossy().into_owned()
-        });
+        .unwrap_or_else(|| scenario.file_name().unwrap().to_string_lossy().into_owned());
     let protocol_version = crate::transport::protocol_version_for(workflow.mechanics);
-    let (env, dotenv_keys) = crate::transport::build_agent_env(
-        &options.agent_dir,
-        &scratch,
-        wallclock,
-        &scenario_slug,
-        protocol_version,
-    );
+    let resolved = options.agent.resolve()?;
     if !options.quiet {
         eprintln!(
-            "[local-runner] scenario={} agent={:?} wallclock={wallclock}s dotenv_keys={dotenv_keys:?}",
+            "[local-runner] scenario={} agent={} wallclock={wallclock}s",
             scenario.display(),
-            options.agent_command
+            resolved.describe()
         );
     }
 
@@ -892,21 +918,32 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     use std::io::Write as _;
     writeln!(
         agent_log,
-        "[local-runner] command={:?} dotenv_keys={dotenv_keys:?} wallclock={wallclock}s",
-        options.agent_command
+        "[local-runner] {} wallclock={wallclock}s",
+        resolved.describe()
     )?;
     agent_log.flush()?;
-    let mut provider: Box<dyn DecisionProvider> = if options.agent_command.trim() == "builtin" {
-        Box::new(crate::agent::builtin::BuiltinAgent::new())
-    } else {
-        Box::new(AgentProcess::new(
-            &options.agent_command,
-            options.agent_dir.clone(),
-            env,
-            Some(agent_log),
-            options.init_timeout,
-            protocol_version,
-        )?)
+    let mut provider: Box<dyn DecisionProvider> = match &resolved {
+        crate::agent::ResolvedAgent::Builtin(strategy) => Box::new(strategy.build()),
+        crate::agent::ResolvedAgent::Subprocess { command, agent_dir } => {
+            let (env, dotenv_keys) = crate::transport::build_agent_env(
+                agent_dir,
+                &scratch,
+                wallclock,
+                &scenario_slug,
+                protocol_version,
+            );
+            if !options.quiet {
+                eprintln!("[local-runner] dotenv_keys={dotenv_keys:?}");
+            }
+            Box::new(AgentProcess::new(
+                command,
+                agent_dir.clone(),
+                env,
+                Some(agent_log),
+                options.init_timeout,
+                protocol_version,
+            )?)
+        }
     };
     let run_result = workflow.run(provider.as_mut(), Some(wallclock));
     provider.shutdown();
@@ -987,5 +1024,10 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     } else {
         2
     };
-    Ok(RunOutcome { result, report, summary, exit_code })
+    Ok(RunOutcome {
+        result,
+        report,
+        summary,
+        exit_code,
+    })
 }
