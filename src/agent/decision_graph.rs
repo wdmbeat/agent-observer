@@ -17,9 +17,12 @@ use serde_json::{json, Value};
 
 use crate::workflow::DecisionProvider;
 
+use super::model::{
+    DecisionSnapshot, InitialPublication, Program, Report, ScoringContract, SnapshotSchema,
+};
 use super::model_factory::ChatModel;
 use super::my_strategy::BaselineSelector;
-use super::protocol;
+use super::protocol::{self, DecisionResponse};
 use super::scoring_preview::{preview_actions, CandidatePreview};
 use super::state::RunState;
 
@@ -33,7 +36,7 @@ pub enum Selection {
     },
     Observe {
         tile_id: String,
-        program: String,
+        program: Program,
         request_id: String,
         reason: String,
         source: &'static str,
@@ -46,8 +49,8 @@ pub trait Selector {
     fn select(
         &mut self,
         previews: &[CandidatePreview],
-        snapshot: &Value,
-        publication: &Value,
+        snapshot: &DecisionSnapshot,
+        publication: &InitialPublication,
     ) -> Selection;
 }
 
@@ -57,8 +60,8 @@ impl Selector for Box<dyn Selector> {
     fn select(
         &mut self,
         previews: &[CandidatePreview],
-        snapshot: &Value,
-        publication: &Value,
+        snapshot: &DecisionSnapshot,
+        publication: &InitialPublication,
     ) -> Selection {
         (**self).select(previews, snapshot, publication)
     }
@@ -86,8 +89,8 @@ impl<S: Selector> Selector for LlmSelector<S> {
     fn select(
         &mut self,
         previews: &[CandidatePreview],
-        snapshot: &Value,
-        publication: &Value,
+        snapshot: &DecisionSnapshot,
+        publication: &InitialPublication,
     ) -> Selection {
         let candidates: Vec<Value> = previews
             .iter()
@@ -97,8 +100,8 @@ impl<S: Selector> Selector for LlmSelector<S> {
             .collect();
         if !candidates.is_empty() {
             let prompt = json!({
-                "decision_sequence": snapshot["decision_sequence"],
-                "cursor": snapshot["cursor"],
+                "decision_sequence": snapshot.decision_sequence,
+                "cursor": snapshot.cursor,
                 "candidates": candidates,
                 "output_schema": {
                     "action": "observe",
@@ -189,12 +192,10 @@ fn validated_model_decision(
         selection.get("program").and_then(Value::as_str).unwrap_or(""),
         selection.get("request_id").and_then(Value::as_str).unwrap_or(""),
     );
-    let listed = previews.iter().take(top_k).any(|preview| {
+    let listed = previews.iter().take(top_k).find(|preview| {
         (preview.tile_id.as_str(), preview.program.as_str(), preview.request_id.as_str()) == key
     });
-    if !listed {
-        return None;
-    }
+    let row = listed?;
     let reason = selection
         .get("reason")
         .and_then(Value::as_str)
@@ -205,7 +206,7 @@ fn validated_model_decision(
     let reason: String = reason.chars().take(240).collect();
     Some(Selection::Observe {
         tile_id: key.0.to_string(),
-        program: key.1.to_string(),
+        program: row.program,
         request_id: key.2.to_string(),
         reason: if reason.is_empty() { "model selection".to_string() } else { reason },
         source: "model",
@@ -254,8 +255,14 @@ impl<S> DeterministicAgent<S> {
 }
 
 impl<S: Selector> DeterministicAgent<S> {
-    /// `MinimalDecisionAgent.decide`: one decision for one snapshot.
-    pub fn decide(&mut self, snapshot: &Value) -> Result<Value> {
+    /// `MinimalDecisionAgent.publish_initial` equivalent (typed).
+    pub fn publish_initial(&mut self, publication: &InitialPublication) -> Result<()> {
+        self.state.publish_initial(publication)
+    }
+
+    /// `MinimalDecisionAgent.decide`: one decision for one snapshot, returned
+    /// as the response envelope Value for the `DecisionProvider` seam.
+    pub fn decide(&mut self, snapshot: &DecisionSnapshot) -> Result<Value> {
         let Self { state, selector } = self;
         let publication = state
             .initial_publication
@@ -267,8 +274,8 @@ impl<S: Selector> DeterministicAgent<S> {
             .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
         // Practice scenarios speak the pre-anomaly snapshot: no score feedback,
         // no reports, and a repeat observation would be an invalid duplicate there.
-        let mechanics = snapshot["schema_version"].as_str() == Some("decision-snapshot-v3");
-        let reports = if mechanics {
+        let mechanics = snapshot.schema_version == SnapshotSchema::V3;
+        let reports: Vec<Report> = if mechanics {
             detector.process_snapshot(snapshot)
         } else {
             Vec::new()
@@ -278,87 +285,93 @@ impl<S: Selector> DeterministicAgent<S> {
         } else {
             std::borrow::Cow::Borrowed(snapshot)
         };
+        let scoring_contract: &ScoringContract = &publication.scoring_contract;
         let previews: Vec<CandidatePreview> = preview_actions(
             filtered.as_ref(),
-            &publication["scoring_contract"],
+            scoring_contract,
             if mechanics { Some(&detector.bests) } else { None },
         )?;
-        let mut decision = match selector.select(&previews, filtered.as_ref(), publication) {
-            Selection::Wait { reason, source } => json!({
-                "action": "wait",
-                "tile_id": "",
-                "program": "",
-                "request_id": "",
-                "reason": reason,
-                "decision_source": source,
-            }),
-            Selection::Observe { tile_id, program, request_id, reason, source } => json!({
-                "action": "observe",
-                "tile_id": tile_id,
-                "program": program,
-                "request_id": request_id,
-                "reason": reason,
-                "decision_source": source,
-            }),
-        };
+        let mut decision = selector.select(&previews, filtered.as_ref(), publication);
         // When nothing on the board gains anything, spend the slot confirming a
         // suspect tile: a second read separates permanent tags from weather edges.
         if mechanics {
             if let Some(suspect) = detector.top_suspect(&previews) {
                 if previews.is_empty() || previews[0].estimated_gain_per_second <= 0.0 {
-                    decision = json!({
-                        "action": "observe",
-                        "tile_id": suspect.tile_id,
-                        "program": suspect.program,
-                        "request_id": suspect.request_id,
-                        "reason": "repeat observation to confirm an anomalous realized-score deviation",
-                        "decision_source": "detector",
-                    });
+                    decision = Selection::Observe {
+                        tile_id: suspect.tile_id.clone(),
+                        program: suspect.program,
+                        request_id: suspect.request_id.clone(),
+                        reason: "repeat observation to confirm an anomalous realized-score deviation".to_string(),
+                        source: "detector",
+                    };
                 }
             }
         }
-        if mechanics && decision["action"].as_str() == Some("observe") {
-            let triple = (
-                decision["tile_id"].as_str().unwrap_or(""),
-                decision["program"].as_str().unwrap_or(""),
-                decision["request_id"].as_str().unwrap_or(""),
-            );
-            let row = previews.iter().find(|row| {
-                (row.tile_id.as_str(), row.program.as_str(), row.request_id.as_str()) == triple
-            });
-            let expected = row.map(|row| detector.potential_of(row));
-            let under_cold_wave = detector.under_cold_wave(filtered.as_ref());
-            detector.note_observation(Some(triple.0), expected, under_cold_wave);
-        } else if mechanics {
-            detector.note_observation(None, None, false);
+        if mechanics {
+            if let Selection::Observe { tile_id, program, request_id, .. } = &decision {
+                let triple = (tile_id.as_str(), program.as_str(), request_id.as_str());
+                let row = previews.iter().find(|row| {
+                    (row.tile_id.as_str(), row.program.as_str(), row.request_id.as_str()) == triple
+                });
+                let expected = row.map(|row| detector.potential_of(row));
+                let under_cold_wave = detector.under_cold_wave(filtered.as_ref());
+                detector.note_observation(Some(tile_id), expected, under_cold_wave);
+            } else {
+                detector.note_observation(None, None, false);
+            }
         }
-        Ok(protocol::decision_response(
-            &snapshot["decision_sequence"],
-            &decision,
+        let (action, tile_id, program, request_id, reason, source) = match decision {
+            Selection::Wait { reason, source } => {
+                ("wait", String::new(), String::new(), String::new(), reason, source)
+            }
+            Selection::Observe { tile_id, program, request_id, reason, source } => (
+                "observe",
+                tile_id,
+                program.as_str().to_string(),
+                request_id,
+                reason,
+                source,
+            ),
+        };
+        let response = DecisionResponse {
+            protocol_version: protocol::PROTOCOL_VERSION.to_string(),
+            message_type: "decision_response".to_string(),
+            decision_sequence: snapshot.decision_sequence,
+            action: action.to_string(),
+            tile_id,
+            program,
+            request_id,
+            reason,
+            decision_source: source.to_string(),
             reports,
-        ))
+        };
+        Ok(serde_json::to_value(&response)?)
     }
 }
 
 impl<S: Selector> DecisionProvider for DeterministicAgent<S> {
     fn publish_initial(&mut self, publication: &Value) -> Result<()> {
-        self.state.publish_initial(publication)
+        // The Value→typed seam: `src/workflow.rs` stays Value-based.
+        let publication: InitialPublication = serde_json::from_value(publication.clone())
+            .map_err(|error| anyhow::anyhow!("invalid initial publication: {error}"))?;
+        self.publish_initial(&publication)
     }
 
     fn call(&mut self, snapshot: &Value, _deadline: Instant) -> Result<Value> {
-        self.decide(snapshot)
+        let snapshot: DecisionSnapshot = serde_json::from_value(snapshot.clone())
+            .map_err(|error| anyhow::anyhow!("invalid decision snapshot: {error}"))?;
+        self.decide(&snapshot)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn preview(tile_id: &str, program: &str, request_id: &str) -> CandidatePreview {
+    fn preview(tile_id: &str, program: Program, request_id: &str) -> CandidatePreview {
         CandidatePreview {
             tile_id: tile_id.to_string(),
-            program: program.to_string(),
+            program,
             request_id: request_id.to_string(),
             region_id: "R1".to_string(),
             scheduling_class: "STANDARD".to_string(),
@@ -366,7 +379,7 @@ mod tests {
             atmospheric_quality: 0.8,
             lunar_quality_factor: 1.0,
             combined_quality: 0.8,
-            quality_band: "DARK".to_string(),
+            quality_band: program,
             tile_science_value: 100.0,
             estimated_science_score: 80.0,
             terminal_penalty_avoidance: 0.0,
@@ -394,8 +407,8 @@ mod tests {
     #[test]
     fn model_decision_requires_a_listed_observe_action() {
         let previews = vec![
-            preview("TILE-1", "DARK", ""),
-            preview("TILE-2", "BRIGHT", "REQ-1"),
+            preview("TILE-1", Program::Dark, ""),
+            preview("TILE-2", Program::Bright, "REQ-1"),
         ];
         let valid = decide_from_model_text(
             r#"{"action":"observe","tile_id":"TILE-2","program":"BRIGHT","request_id":"REQ-1","reason":"  best   gain  "}"#,
@@ -407,7 +420,7 @@ mod tests {
             valid,
             Selection::Observe {
                 tile_id: "TILE-2".to_string(),
-                program: "BRIGHT".to_string(),
+                program: Program::Bright,
                 request_id: "REQ-1".to_string(),
                 reason: "best gain".to_string(),
                 source: "model",
@@ -432,7 +445,7 @@ mod tests {
 
     #[test]
     fn model_reason_defaults_and_truncates() {
-        let previews = vec![preview("TILE-1", "DARK", "")];
+        let previews = vec![preview("TILE-1", Program::Dark, "")];
         let missing = decide_from_model_text(
             r#"{"action":"observe","tile_id":"TILE-1","program":"DARK","request_id":""}"#,
             &previews,

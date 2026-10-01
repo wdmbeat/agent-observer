@@ -6,11 +6,13 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
-use serde_json::{json, Value};
 
-use crate::contracts::parse_utc;
 use crate::geometry::angular_separation_deg;
 
+use super::model::{
+    CandidateTile, DecisionSnapshot, FaultScope, FaultStatus, Forecast, InitialPublication,
+    ProgramBonus, Report,
+};
 use super::scoring_preview::CandidatePreview;
 
 fn float_env(name: &str, default: f64) -> f64 {
@@ -27,17 +29,6 @@ fn int_env(name: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
-fn parse_utc_lenient(value: &Value) -> Option<DateTime<Utc>> {
-    value.as_str().and_then(|text| parse_utc(text).ok())
-}
-
-fn value_f64(value: &Value, default: f64) -> f64 {
-    value
-        .as_f64()
-        .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
-        .unwrap_or(default)
-}
-
 /// Run-long memory for realized-vs-baseline deviation tracking.
 pub struct AnomalyDetector {
     pub nova_ratio_min: f64,
@@ -49,7 +40,7 @@ pub struct AnomalyDetector {
     pub fault_evidence_window: i64,
     pub tag_min_reads: i64,
     pub tag_min_fraction: f64,
-    program_bonus: HashMap<String, f64>,
+    program_bonus: ProgramBonus,
     tile_coords: HashMap<String, (f64, f64)>,
     pub bests: HashMap<String, f64>,
     pending: Option<PendingObservation>,
@@ -59,9 +50,9 @@ pub struct AnomalyDetector {
     tag_reads: HashMap<String, Vec<(Option<String>, String)>>,
     recent_ratios: Vec<f64>,
     fault_pending: bool,
-    fault_scope: Option<(String, Value)>,
+    fault_scope: Option<FaultScope>,
     fault_repair_until: Option<DateTime<Utc>>,
-    forecasts: Vec<Value>,
+    forecasts: Vec<Forecast>,
 }
 
 struct PendingObservation {
@@ -71,43 +62,10 @@ struct PendingObservation {
 }
 
 impl AnomalyDetector {
-    pub fn new(initial_publication: &Value) -> Self {
-        let mut program_bonus: HashMap<String, f64> = initial_publication
-            .get("scoring_contract")
-            .and_then(|contract| contract.get("score_config"))
-            .and_then(|config| config.get("program_bonus"))
-            .and_then(Value::as_object)
-            .map(|object| {
-                object
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value_f64(value, 0.0)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if program_bonus.is_empty() {
-            program_bonus = HashMap::from([
-                ("DARK".to_string(), 0.25),
-                ("BRIGHT".to_string(), 0.15),
-                ("BACKUP".to_string(), 0.08),
-            ]);
-        }
+    pub fn new(initial_publication: &InitialPublication) -> Self {
         let mut tile_coords = HashMap::new();
-        for tile in initial_publication
-            .get("tile_catalog")
-            .and_then(|catalog| catalog.get("tiles"))
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            if tile.get("ra_deg").is_some() && tile.get("dec_deg").is_some() {
-                tile_coords.insert(
-                    tile["tile_id"].as_str().unwrap_or("").to_string(),
-                    (
-                        value_f64(&tile["ra_deg"], 0.0),
-                        value_f64(&tile["dec_deg"], 0.0),
-                    ),
-                );
-            }
+        for tile in &initial_publication.tile_catalog.tiles {
+            tile_coords.insert(tile.tile_id.clone(), (tile.ra_deg, tile.dec_deg));
         }
         Self {
             nova_ratio_min: float_env("SAC_ANOMALY_NOVA_RATIO_MIN", 1.30),
@@ -119,7 +77,11 @@ impl AnomalyDetector {
             fault_evidence_window: int_env("SAC_ANOMALY_FAULT_EVIDENCE_WINDOW", 6),
             tag_min_reads: int_env("SAC_ANOMALY_TAG_MIN_READS", 5),
             tag_min_fraction: float_env("SAC_ANOMALY_TAG_MIN_FRACTION", 0.8),
-            program_bonus,
+            program_bonus: initial_publication
+                .scoring_contract
+                .score_config
+                .program_bonus
+                .clone(),
             tile_coords,
             bests: HashMap::new(),
             pending: None,
@@ -136,12 +98,9 @@ impl AnomalyDetector {
 
     /// The public-baseline score of one exposure under the commit-time snapshot.
     pub fn potential_of(&self, preview_row: &CandidatePreview) -> f64 {
-        let bonus = self
-            .program_bonus
-            .get(&preview_row.quality_band)
-            .copied()
-            .unwrap_or(0.0);
-        preview_row.tile_science_value * preview_row.combined_quality * (1.0 + bonus)
+        preview_row.tile_science_value
+            * preview_row.combined_quality
+            * (1.0 + self.program_bonus.for_program(preview_row.quality_band))
     }
 
     /// Remember the estimate of the observation just committed (None for waits).
@@ -166,25 +125,18 @@ impl AnomalyDetector {
 
     /// Whether a published forecast currently predicts a cold_wave (the only
     /// forecastable event that also moves instrument_efficiency).
-    pub fn under_cold_wave(&mut self, snapshot: &Value) -> bool {
-        if let Some(weekly) = snapshot.get("weekly") {
-            if weekly.is_object() && !weekly["weather_forecast"].is_null() {
-                self.forecasts = weekly["weather_forecast"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default();
-            }
+    pub fn under_cold_wave(&mut self, snapshot: &DecisionSnapshot) -> bool {
+        if let Some(weekly) = &snapshot.weekly {
+            self.forecasts = weekly.weather_forecast.clone();
         }
-        let Some(now) = parse_utc_lenient(&snapshot["cursor"]["timestamp_utc"]) else {
-            return false;
-        };
+        let now = snapshot.cursor.timestamp_utc;
         for forecast in &self.forecasts {
-            if forecast["condition"].as_str() != Some("cold_wave") {
+            if forecast.condition != "cold_wave" {
                 continue;
             }
-            let start = parse_utc_lenient(&forecast["predicted_start_utc"]);
-            let end = parse_utc_lenient(&forecast["predicted_end_utc"]);
-            if let (Some(start), Some(end)) = (start, end) {
+            if let (Some(start), Some(end)) =
+                (forecast.predicted_start_utc, forecast.predicted_end_utc)
+            {
                 if start <= now && now < end {
                     return true;
                 }
@@ -194,44 +146,27 @@ impl AnomalyDetector {
     }
 
     /// Consume feedback/fault publications and return the reports to attach now.
-    pub fn process_snapshot(&mut self, snapshot: &Value) -> Vec<Value> {
+    pub fn process_snapshot(&mut self, snapshot: &DecisionSnapshot) -> Vec<Report> {
         let mut reports = Vec::new();
-        if let Some(fault_status) = snapshot.get("fault_status") {
-            if fault_status.is_object() {
-                match fault_status["status"].as_str() {
-                    Some("fault") => {
-                        self.fault_pending = false;
-                        self.recent_ratios.clear();
-                        self.fault_scope = Some((
-                            fault_status["spatial_scope_type"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                            fault_status
-                                .get("spatial_scope_payload")
-                                .filter(|payload| !payload.is_null())
-                                .cloned()
-                                .unwrap_or_else(|| json!({})),
-                        ));
-                        self.fault_repair_until =
-                            parse_utc_lenient(&fault_status["repair_complete_utc"]);
-                    }
-                    Some("normal") => {
-                        // The platform answered a misreport: clear the pending flag
-                        // and require fresh collapse evidence before reporting again.
-                        self.fault_pending = false;
-                        self.recent_ratios.clear();
-                    }
-                    _ => {}
+        if let Some(fault_status) = &snapshot.fault_status {
+            match fault_status {
+                FaultStatus::Fault { scope, repair_complete_utc, .. } => {
+                    self.fault_pending = false;
+                    self.recent_ratios.clear();
+                    self.fault_scope = Some(scope.clone());
+                    self.fault_repair_until = *repair_complete_utc;
+                }
+                FaultStatus::Normal { .. } => {
+                    // The platform answered a misreport: clear the pending flag
+                    // and require fresh collapse evidence before reporting again.
+                    self.fault_pending = false;
+                    self.recent_ratios.clear();
                 }
             }
         }
-        if let Some(feedback) = snapshot.get("tile_last_finished") {
-            if feedback.is_object() && !feedback["tile_id"].as_str().unwrap_or("").is_empty() {
-                let key = (
-                    feedback["tile_id"].as_str().unwrap().to_string(),
-                    value_f64(&feedback["score"], 0.0),
-                );
+        if let Some(feedback) = &snapshot.tile_last_finished {
+            if !feedback.tile_id.is_empty() {
+                let key = (feedback.tile_id.clone(), feedback.score);
                 if self.last_feedback.as_ref() != Some(&key) {
                     self.last_feedback = Some(key.clone());
                     let pending = self.pending.take();
@@ -258,7 +193,7 @@ impl AnomalyDetector {
         reports
     }
 
-    fn classify(&mut self, tile_id: &str, ratio: f64, snapshot: &Value) -> Vec<Value> {
+    fn classify(&mut self, tile_id: &str, ratio: f64, snapshot: &DecisionSnapshot) -> Vec<Report> {
         let mut reports = Vec::new();
         let band = if self.nova_ratio_min <= ratio && ratio <= self.nova_ratio_max {
             Some("NOVA")
@@ -270,10 +205,7 @@ impl AnomalyDetector {
         // Tag reads accumulate per tile; a tag is permanent, so it must dominate
         // the tile's whole read history, not just appear once, and across more
         // than one night.
-        let night = snapshot["cursor"]["night_id"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+        let night = snapshot.cursor.night_id.clone();
         let reads = self.tag_reads.entry(tile_id.to_string()).or_default();
         reads.push((band.map(str::to_string), night));
         if let Some(band) = band {
@@ -294,7 +226,11 @@ impl AnomalyDetector {
                 {
                     self.reported_tags
                         .insert((tile_id.to_string(), band.to_string()));
-                    reports.push(json!({"kind": band, "tile_id": tile_id}));
+                    let tile_id = tile_id.to_string();
+                    reports.push(match band {
+                        "NOVA" => Report::Nova { tile_id },
+                        _ => Report::Reddening { tile_id },
+                    });
                 }
             }
         }
@@ -311,15 +247,15 @@ impl AnomalyDetector {
             .iter()
             .filter(|value| **value <= self.fault_ratio_max)
             .count() as i64;
-        let now = parse_utc_lenient(&snapshot["cursor"]["timestamp_utc"]);
+        let now = snapshot.cursor.timestamp_utc;
         let repair_active = self
             .fault_repair_until
-            .map(|until| now.map(|now| now < until).unwrap_or(true))
+            .map(|until| now < until)
             .unwrap_or(false);
         if collapses >= self.fault_min_evidence && !self.fault_pending && !repair_active {
             self.fault_pending = true;
             self.recent_ratios.clear();
-            reports.push(json!({"kind": "Instrument_Failure"}));
+            reports.push(Report::InstrumentFailure);
         }
         reports
     }
@@ -340,29 +276,16 @@ impl AnomalyDetector {
         })
     }
 
-    fn in_fault_scope(&self, candidate: &Value) -> bool {
-        let Some((scope_type, payload)) = &self.fault_scope else {
-            return false;
-        };
-        match scope_type.as_str() {
-            "REGION_SET" => {
-                let region_id = candidate["region_id"].as_str().unwrap_or("");
-                payload["region_ids"]
-                    .as_array()
-                    .map(|ids| ids.iter().any(|id| id.as_str() == Some(region_id)))
-                    .unwrap_or(false)
+    fn in_fault_scope(&self, candidate: &CandidateTile) -> bool {
+        match &self.fault_scope {
+            Some(FaultScope::RegionSet { region_ids }) => {
+                region_ids.iter().any(|id| id == &candidate.region_id)
             }
-            "SKY_CAP_ICRS" => {
-                let tile_id = candidate["tile_id"].as_str().unwrap_or("");
-                let Some((ra, dec)) = self.tile_coords.get(tile_id) else {
+            Some(FaultScope::SkyCapIcrs { ra_deg, dec_deg, radius_deg }) => {
+                let Some((ra, dec)) = self.tile_coords.get(&candidate.tile_id) else {
                     return false;
                 };
-                angular_separation_deg(
-                    *ra,
-                    *dec,
-                    value_f64(&payload["ra_deg"], 0.0),
-                    value_f64(&payload["dec_deg"], 0.0),
-                ) <= value_f64(&payload["radius_deg"], 0.0)
+                angular_separation_deg(*ra, *dec, *ra_deg, *dec_deg) <= *radius_deg
             }
             // Shipped configs scope faults to REGION_SET only, so avoidance is
             // complete; HORIZON_SECTOR would need mount-side geometry the agent
@@ -374,30 +297,30 @@ impl AnomalyDetector {
     /// Drop candidates inside a known-active fault's scope while alternatives exist.
     /// Borrows the snapshot when nothing changes (the common case), matching
     /// Python returning the same object.
-    pub fn filter_fault_scope<'a>(&self, snapshot: &'a Value) -> std::borrow::Cow<'a, Value> {
-        let now = parse_utc_lenient(&snapshot["cursor"]["timestamp_utc"]);
+    pub fn filter_fault_scope<'a>(
+        &self,
+        snapshot: &'a DecisionSnapshot,
+    ) -> std::borrow::Cow<'a, DecisionSnapshot> {
+        let now = snapshot.cursor.timestamp_utc;
         let active = self.fault_scope.is_some()
             && self
                 .fault_repair_until
-                .map(|until| now.map(|now| now < until).unwrap_or(false))
+                .map(|until| now < until)
                 .unwrap_or(false);
         if !active {
             return std::borrow::Cow::Borrowed(snapshot);
         }
-        let candidates = snapshot["candidate_tiles"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        let kept: Vec<Value> = candidates
+        let kept: Vec<CandidateTile> = snapshot
+            .candidate_tiles
             .iter()
             .filter(|candidate| !self.in_fault_scope(candidate))
             .cloned()
             .collect();
-        if kept.is_empty() || kept.len() == candidates.len() {
+        if kept.is_empty() || kept.len() == snapshot.candidate_tiles.len() {
             return std::borrow::Cow::Borrowed(snapshot);
         }
         let mut filtered = snapshot.clone();
-        filtered["candidate_tiles"] = Value::Array(kept);
+        filtered.candidate_tiles = kept;
         std::borrow::Cow::Owned(filtered)
     }
 }

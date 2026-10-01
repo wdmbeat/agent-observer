@@ -7,17 +7,19 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
-use serde_json::Value;
 
-use crate::contracts::{parse_utc, round6, round9};
+use crate::contracts::{round6, round9};
 
-pub const PROGRAMS: [&str; 3] = ["DARK", "BRIGHT", "BACKUP"];
+use super::model::{
+    CandidateTile, DecisionSnapshot, Program, SchedulingClass, ScoreConfig, ScoringContract,
+    WeatherScoreInterface,
+};
 
 /// One legal current-snapshot action and its transparent ranking terms.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CandidatePreview {
     pub tile_id: String,
-    pub program: String,
+    pub program: Program,
     pub request_id: String,
     pub region_id: String,
     pub scheduling_class: String,
@@ -25,7 +27,7 @@ pub struct CandidatePreview {
     pub atmospheric_quality: f64,
     pub lunar_quality_factor: f64,
     pub combined_quality: f64,
-    pub quality_band: String,
+    pub quality_band: Program,
     pub tile_science_value: f64,
     pub estimated_science_score: f64,
     pub terminal_penalty_avoidance: f64,
@@ -35,98 +37,72 @@ pub struct CandidatePreview {
     pub estimate_semantics: String,
 }
 
-/// Python `float(value)`: numbers pass through, numeric strings parse.
-fn number(value: &Value, name: &str) -> Result<f64> {
-    let result = match value {
-        Value::Number(number) => number.as_f64(),
-        Value::String(text) => text.trim().parse::<f64>().ok(),
-        _ => None,
-    };
-    let result = result.ok_or_else(|| anyhow::anyhow!("{name} must be numeric"))?;
-    if !result.is_finite() {
-        bail!("{name} must be finite");
+fn quality_band(quality: f64, score_config: &ScoreConfig) -> Program {
+    if quality >= score_config.quality_thresholds.dark {
+        return Program::Dark;
     }
-    Ok(result)
-}
-
-fn quality_band(quality: f64, score_config: &Value) -> Result<&'static str> {
-    let thresholds = &score_config["quality_thresholds"];
-    if quality >= number(&thresholds["dark"], "dark threshold")? {
-        return Ok("DARK");
+    if quality >= score_config.quality_thresholds.bright {
+        return Program::Bright;
     }
-    if quality >= number(&thresholds["bright"], "bright threshold")? {
-        return Ok("BRIGHT");
-    }
-    Ok("BACKUP")
+    Program::Backup
 }
 
 /// Efficiency-free atmospheric quality × lunar; (atmospheric, lunar, combined).
-fn combined_quality(candidate: &Value, weather_interface: &Value) -> Result<(f64, f64, f64)> {
-    let weather = &candidate["effective_weather"];
-    let geometry = &candidate["geometry"];
-    let lunar = number(&geometry["lunar_quality_factor"], "lunar factor")?;
-    if !weather["is_observable"].as_bool().unwrap_or(false) {
+fn combined_quality(
+    candidate: &CandidateTile,
+    weather_interface: &WeatherScoreInterface,
+) -> Result<(f64, f64, f64)> {
+    let weather = &candidate.effective_weather;
+    let lunar = candidate.geometry.lunar_quality_factor;
+    if !weather.is_observable {
         return Ok((0.0, lunar, 0.0));
     }
-    let airmass = number(&geometry["airmass"], "airmass")?;
+    let airmass = candidate.geometry.airmass;
     if airmass <= 0.0 {
         bail!("airmass must be positive");
     }
-    let mut atmospheric = number(&weather["transparency"], "transparency")?
-        * number(&weather["sky_quality"], "sky quality")?
-        / (number(&weather["seeing_arcsec"], "seeing")?
-            * airmass.powf(number(
-                &weather_interface["airmass_exponent"],
-                "airmass exponent",
-            )?));
-    atmospheric = atmospheric.min(number(
-        &weather_interface["maximum_weather_quality"],
-        "maximum weather quality",
-    )?);
+    // Observable slots always carry the quality factors on the wire; a
+    // force-closed slot (None) is never observable and returns above.
+    let seeing = weather
+        .seeing_arcsec
+        .ok_or_else(|| anyhow::anyhow!("seeing must be numeric"))?;
+    let transparency = weather
+        .transparency
+        .ok_or_else(|| anyhow::anyhow!("transparency must be numeric"))?;
+    let sky_quality = weather
+        .sky_quality
+        .ok_or_else(|| anyhow::anyhow!("sky quality must be numeric"))?;
+    let mut atmospheric = transparency * sky_quality
+        / (seeing * airmass.powf(weather_interface.airmass_exponent));
+    atmospheric = atmospheric.min(weather_interface.maximum_weather_quality);
     Ok((atmospheric, lunar, atmospheric * lunar))
 }
 
 /// (request_id, apportioned value) per matching active incomplete request.
-fn request_options(snapshot: &Value, tile_id: &str) -> Result<Vec<(String, f64)>> {
+fn request_options(snapshot: &DecisionSnapshot, tile_id: &str) -> Vec<(String, f64)> {
     let mut options = Vec::new();
-    for request in snapshot["active_requests"].as_array().into_iter().flatten() {
-        if request["is_complete"].as_bool().unwrap_or(false) {
+    for request in &snapshot.active_requests {
+        if request.is_complete {
             continue;
         }
-        let matching = request["tile_requirements"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|item| {
-                item["tile_id"].as_str() == Some(tile_id)
-                    && item
-                        .get("remaining_visits")
-                        .or_else(|| item.get("required_visits"))
-                        .and_then(Value::as_i64)
-                        .unwrap_or(0)
-                        > 0
-            });
-        if matching.is_none() {
+        let matching = request
+            .tile_requirements
+            .iter()
+            .any(|item| item.tile_id == tile_id && item.remaining_or_required() > 0);
+        if !matching {
             continue;
         }
-        let remaining_tiles = (request["required_tile_count"].as_i64().unwrap_or(0)
-            - request["satisfied_tile_count"].as_i64().unwrap_or(0))
-        .max(1);
-        let eventual_delta = number(&request["completion_reward"], "request reward")?
-            + number(&request["miss_penalty"], "request miss penalty")?;
-        options.push((
-            request["request_id"].as_str().unwrap_or("").to_string(),
-            eventual_delta / remaining_tiles as f64,
-        ));
+        let remaining_tiles = (request.required_tile_count - request.satisfied_tile_count).max(1);
+        let eventual_delta = request.completion_reward + request.miss_penalty;
+        options.push((request.request_id.clone(), eventual_delta / remaining_tiles as f64));
     }
-    Ok(options)
+    options
 }
 
-fn known_window_can_finish(snapshot: &Value, candidate: &Value) -> Result<bool> {
-    let start = parse_utc(snapshot["cursor"]["timestamp_utc"].as_str().unwrap_or(""))?;
-    let end = parse_utc(candidate["window_end_utc"].as_str().unwrap_or(""))?;
-    let exposure = candidate["nominal_exptime_seconds"].as_i64().unwrap_or(0);
-    Ok(start + chrono::TimeDelta::seconds(exposure) <= end)
+fn known_window_can_finish(snapshot: &DecisionSnapshot, candidate: &CandidateTile) -> bool {
+    snapshot.cursor.timestamp_utc
+        + chrono::TimeDelta::seconds(candidate.nominal_exptime_seconds)
+        <= candidate.window_end_utc
 }
 
 /// Rank legal starts using public current state without reading future truth.
@@ -135,38 +111,29 @@ fn known_window_can_finish(snapshot: &Value, candidate: &Value) -> Result<bool> 
 /// means untracked (legacy), where repeats of completed tiles without request
 /// value are never candidates.
 pub fn preview_actions(
-    snapshot: &Value,
-    scoring_contract: &Value,
+    snapshot: &DecisionSnapshot,
+    scoring_contract: &ScoringContract,
     tile_best_scores: Option<&HashMap<String, f64>>,
 ) -> Result<Vec<CandidatePreview>> {
-    let schema = snapshot["schema_version"].as_str().unwrap_or("");
-    if schema != "decision-snapshot-v2" && schema != "decision-snapshot-v3" {
-        bail!("unsupported decision snapshot schema_version");
-    }
-    let score_config = &scoring_contract["score_config"];
-    if score_config["schema_version"].as_str() != Some("challenge-score-v3") {
+    let score_config = &scoring_contract.score_config;
+    if score_config.schema_version != "challenge-score-v3" {
         bail!("unsupported score config schema_version");
     }
-    let weather_interface = &scoring_contract["weather_score_interface"];
-    let penalties = &score_config["penalties"];
-    let bonuses = &score_config["program_bonus"];
-    let quota = score_config["flexible_quota_per_region"]
-        .as_i64()
-        .unwrap_or(0);
+    let weather_interface = &scoring_contract.weather_score_interface;
+    let penalties = &score_config.penalties;
+    let quota = score_config.flexible_quota_per_region;
     let empty_bests = HashMap::new();
     let best_scores = tile_best_scores.unwrap_or(&empty_bests);
-    let flexible_progress = &snapshot["progress"]["flexible_completed_by_region"];
+    let flexible_progress = &snapshot.progress.flexible_completed_by_region;
     let mut result = Vec::new();
-    for candidate in snapshot["candidate_tiles"].as_array().into_iter().flatten() {
-        let weather = &candidate["effective_weather"];
-        if !weather["is_observable"].as_bool().unwrap_or(false)
-            || !known_window_can_finish(snapshot, candidate)?
+    for candidate in &snapshot.candidate_tiles {
+        if !candidate.effective_weather.is_observable || !known_window_can_finish(snapshot, candidate)
         {
             continue;
         }
-        let tile_id = candidate["tile_id"].as_str().unwrap_or("").to_string();
-        let already_completed = candidate["already_completed"].as_bool().unwrap_or(false);
-        let options = request_options(snapshot, &tile_id)?;
+        let tile_id = candidate.tile_id.clone();
+        let already_completed = candidate.already_completed;
+        let options = request_options(snapshot, &tile_id);
         if already_completed && tile_best_scores.is_none() && options.is_empty() {
             // Pre-anomaly semantics: without a realized-best ledger a repeat is
             // never a candidate (and would be an invalid duplicate on the platform).
@@ -178,9 +145,9 @@ pub fn preview_actions(
             options
         };
         let (atmospheric, lunar, combined) = combined_quality(candidate, weather_interface)?;
-        let band = quality_band(combined, score_config)?;
-        let tile_value = number(&candidate["tile_science_value"], "tile science value")?;
-        let potential = tile_value * combined * (1.0 + number(&bonuses[band], "program bonus")?);
+        let band = quality_band(combined, score_config);
+        let tile_value = candidate.tile_science_value;
+        let potential = tile_value * combined * (1.0 + score_config.program_bonus.for_program(band));
         let science = if already_completed {
             match best_scores.get(&tile_id) {
                 Some(banked) => (potential - banked).max(0.0),
@@ -189,23 +156,16 @@ pub fn preview_actions(
         } else {
             potential
         };
-        let scheduling_class = candidate["scheduling_class"].as_str().unwrap_or("");
         let mut terminal_avoidance = 0.0;
-        if !already_completed && scheduling_class == "REQUIRED" {
-            terminal_avoidance = number(&penalties["required_miss"], "required miss penalty")?;
+        if !already_completed && candidate.scheduling_class == SchedulingClass::Required {
+            terminal_avoidance = penalties.required_miss;
         } else if !already_completed
-            && scheduling_class == "FLEXIBLE"
-            && flexible_progress[candidate["region_id"].as_str().unwrap_or("")]
-                .as_i64()
-                .unwrap_or(0)
-                < quota
+            && candidate.scheduling_class == SchedulingClass::Flexible
+            && flexible_progress.get(&candidate.region_id).copied().unwrap_or(0) < quota
         {
-            terminal_avoidance = number(
-                &penalties["flexible_shortfall_per_tile"],
-                "flexible shortfall penalty",
-            )?;
+            terminal_avoidance = penalties.flexible_shortfall_per_tile;
         }
-        let exposure = candidate["nominal_exptime_seconds"].as_i64().unwrap_or(0);
+        let exposure = candidate.nominal_exptime_seconds;
         if exposure <= 0 {
             bail!("nominal exposure must be positive");
         }
@@ -213,15 +173,15 @@ pub fn preview_actions(
             let total = science + terminal_avoidance + request_value;
             result.push(CandidatePreview {
                 tile_id: tile_id.clone(),
-                program: band.to_string(),
+                program: band,
                 request_id,
-                region_id: candidate["region_id"].as_str().unwrap_or("").to_string(),
-                scheduling_class: scheduling_class.to_string(),
+                region_id: candidate.region_id.clone(),
+                scheduling_class: candidate.scheduling_class.as_str().to_string(),
                 nominal_exptime_seconds: exposure,
                 atmospheric_quality: round6(atmospheric),
                 lunar_quality_factor: round6(lunar),
                 combined_quality: round6(combined),
-                quality_band: band.to_string(),
+                quality_band: band,
                 tile_science_value: round6(tile_value),
                 estimated_science_score: round6(science),
                 terminal_penalty_avoidance: round6(terminal_avoidance),

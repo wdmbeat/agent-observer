@@ -16,13 +16,17 @@
 //! | `reference_strategy.py`   | `reference_strategy.rs`  |
 //! | `model_factory.py`        | `model_factory.rs`       |
 //!
-//! `strategy.rs` is Rust-only CLI glue (the `Strategy` value-enum and agent
-//! factory) with no Python counterpart. This `mod.rs` additionally holds
-//! `AgentSpec`, the typed agent selection shared by the CLI and the library.
+//! `model.rs` is a Rust-only typed schema layer with no Python counterpart
+//! (the Python agent passes dicts around): the inbound wire JSON is decoded
+//! once at the seam and the pipeline runs on typed values. `strategy.rs` is
+//! Rust-only CLI glue (the `Strategy` value-enum and agent factory) with no
+//! Python counterpart. This `mod.rs` additionally holds `AgentSpec`, the
+//! typed agent selection shared by the CLI and the library.
 
 pub mod anomaly_detection;
 pub mod decision_graph;
 pub mod minimal_agent;
+pub mod model;
 pub mod model_factory;
 pub mod my_strategy;
 pub mod protocol;

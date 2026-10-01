@@ -10,18 +10,11 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 
 use crate::transport::load_dotenv;
-use crate::workflow::DecisionProvider;
 
 use super::decision_graph::{DeterministicAgent, LlmSelector, Selector};
 use super::model_factory::{build_chat_model, ModelSettings};
-use super::protocol::{self, MessageType};
+use super::protocol::{self, PlatformMessage};
 use super::strategy;
-
-/// JSON value rendering for the finish summary (Python `print` of the raw
-/// payload values: strings bare, numbers as-is).
-fn display(value: &Value) -> String {
-    value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string())
-}
 
 /// Consume platform envelopes and emit one response per decision request.
 pub fn run() -> Result<()> {
@@ -50,9 +43,8 @@ pub fn run() -> Result<()> {
         }
         let message: Value =
             serde_json::from_str(&line).context("platform message is not valid JSON")?;
-        let (message_type, payload) = protocol::parse_platform_message(&message)?;
-        match message_type {
-            MessageType::Initialize => {
+        match protocol::parse_platform_message(&message)? {
+            PlatformMessage::Initialize(publication) => {
                 let inner = strategy::standalone_selector_from_env();
                 let selector: Box<dyn Selector> = match &model {
                     Some(model) => Box::new(LlmSelector::new(
@@ -63,24 +55,26 @@ pub fn run() -> Result<()> {
                     None => inner,
                 };
                 let mut next = DeterministicAgent::with_selector(selector);
-                next.publish_initial(&payload)?;
+                next.publish_initial(&publication)?;
                 agent = Some(next);
             }
-            MessageType::DecisionRequest => {
+            PlatformMessage::DecisionRequest { snapshot, .. } => {
                 let agent = agent
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
-                let response = agent.decide(&payload)?;
+                let response = agent.decide(&snapshot)?;
                 decisions += 1;
                 serde_json::to_writer(&mut stdout, &response)?;
                 stdout.write_all(b"\n")?;
                 stdout.flush()?;
             }
-            MessageType::Finish => {
+            PlatformMessage::Finish {
+                termination_reason,
+                last_decision_sequence,
+                ..
+            } => {
                 eprintln!(
-                    "sac-agent finished: termination_reason={} decisions={decisions} last_decision_sequence={}",
-                    display(&payload["termination_reason"]),
-                    display(&payload["last_decision_sequence"]),
+                    "sac-agent finished: termination_reason={termination_reason} decisions={decisions} last_decision_sequence={last_decision_sequence}"
                 );
                 return Ok(());
             }
