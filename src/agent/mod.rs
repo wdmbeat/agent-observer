@@ -16,12 +16,14 @@
 //! | `reference_strategy.py`   | `reference_strategy.rs`  |
 //! | `model_factory.py`        | `model_factory.rs`       |
 //!
-//! `model.rs` is a Rust-only typed schema layer with no Python counterpart
-//! (the Python agent passes dicts around): the inbound wire JSON is decoded
-//! once at the seam and the pipeline runs on typed values. `strategy.rs` is
-//! Rust-only CLI glue (the `Strategy` value-enum and agent factory) with no
-//! Python counterpart. This `mod.rs` additionally holds `AgentSpec`, the
-//! typed agent selection shared by the CLI and the library.
+//! `model.rs` holds the agent-only snapshot/decision wire types (the Python
+//! agent passes dicts around; there is no counterpart file). The shared
+//! publication wire schema (`InitialPublication` and friends) lives in
+//! `src/schema.rs`, used by both the workflow producer and the agent, and is
+//! re-exported from `model.rs`. `strategy.rs` is Rust-only CLI glue (the
+//! `Strategy` value-enum and agent factory) with no Python counterpart. This
+//! `mod.rs` additionally holds `AgentSpec`, the typed agent selection shared
+//! by the CLI and the library.
 
 pub mod anomaly_detection;
 pub mod decision_graph;

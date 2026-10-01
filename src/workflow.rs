@@ -18,6 +18,7 @@ use crate::contracts::{
 };
 use crate::geometry::TileWindowRow;
 use crate::requests::ObservationRequestSimulator;
+use crate::schema::{CalendarSummary, CatalogTile, InitialPublication, ScoringContract, Site, TargetRow, TileCatalog};
 use crate::scoring::{dumps_report, ChallengeScorer, Decision};
 use crate::transport::{is_global_deadline_expired, AgentProcess};
 
@@ -86,29 +87,7 @@ pub fn load_workflow_config(path: &Path) -> Result<Value> {
     Ok(config)
 }
 
-/// `Tile.csv_row()` as a JSON object: formatted floats stay strings, counts
-/// stay integers — matching Python's dict values exactly.
-fn tile_csv_row_json(tile: &crate::geometry::Tile) -> Value {
-    let cells = tile.csv_row();
-    let mut map = Map::new();
-    map.insert("tile_id".into(), json!(cells[0]));
-    map.insert("ra_deg".into(), json!(cells[1]));
-    map.insert("dec_deg".into(), json!(cells[2]));
-    map.insert(
-        "nominal_exptime_seconds".into(),
-        json!(cells[3].parse::<i64>().unwrap()),
-    );
-    map.insert("region_id".into(), json!(cells[4]));
-    map.insert("scheduling_class".into(), json!(cells[5]));
-    map.insert("available_from_utc".into(), json!(cells[6]));
-    map.insert("available_until_utc".into(), json!(cells[7]));
-    map.insert("n_lrg".into(), json!(cells[8].parse::<i64>().unwrap()));
-    map.insert("n_elg".into(), json!(cells[9].parse::<i64>().unwrap()));
-    map.insert("n_qso".into(), json!(cells[10].parse::<i64>().unwrap()));
-    map.insert("n_bgs".into(), json!(cells[11].parse::<i64>().unwrap()));
-    Value::Object(map)
-}
-
+/// `Night.csv_row()` as a JSON object, used by the night-start publication.
 fn night_csv_row_json(night: &crate::calendar::Night) -> Value {
     let cells = night.csv_row();
     let mut map = Map::new();
@@ -142,8 +121,10 @@ pub struct ChallengeWorkflow {
     pub requests: ObservationRequestSimulator,
     pub target_catalog: Vec<Vec<String>>,
     pub mechanics: bool,
+    /// The scenario score config, parsed once (the publication's contract).
+    pub score_config: crate::schema::ScoreConfig,
     pub committed: Vec<Decision>,
-    pub commit_log: Vec<Value>,
+    pub commit_log: Vec<crate::schema::CommitLogEntry>,
     row_seq: i64,
     last_finished: Option<Value>,
     fault_feed: Vec<FaultFeedEntry>,
@@ -172,6 +153,8 @@ impl ChallengeWorkflow {
             &TARGET_COLUMNS,
         )?;
         let mechanics = scorer.mechanics;
+        let score_config: crate::schema::ScoreConfig =
+            serde_json::from_value(scorer.config.clone()).context("parsing score config")?;
         let fault_latency_days = scorer
             .config
             .get("fault_response")
@@ -185,6 +168,7 @@ impl ChallengeWorkflow {
             requests,
             target_catalog,
             mechanics,
+            score_config,
             committed: Vec::new(),
             commit_log: Vec::new(),
             row_seq: 0,
@@ -203,8 +187,11 @@ impl ChallengeWorkflow {
         ids
     }
 
-    /// Immutable public catalogs and the exact official score contract.
-    pub fn initial_publication(&self) -> Value {
+    /// Immutable public catalogs and the exact official score contract, as the
+    /// typed `schema::InitialPublication`. Serializing it yields the wire
+    /// document byte-value-identical to the old hand-built `json!`
+    /// (regression-tested against goldens in `tests/initial_publication.rs`).
+    pub fn initial_publication(&self) -> Result<InitialPublication> {
         let night_ids = self.ordered_night_ids();
         let nights: Vec<&crate::calendar::Night> = night_ids
             .iter()
@@ -212,15 +199,23 @@ impl ChallengeWorkflow {
             .collect();
         let mut tiles: Vec<&crate::geometry::Tile> = self.scorer.tiles.values().collect();
         tiles.sort_by(|left, right| left.tile_id.cmp(&right.tile_id));
-        let tile_rows: Vec<Value> = tiles
+        let catalog_tiles: Vec<CatalogTile> = tiles
             .iter()
-            .map(|tile| {
-                let mut row = tile_csv_row_json(tile).as_object().unwrap().clone();
-                row.insert(
-                    "tile_science_value".into(),
-                    json!(round6(self.scorer.tile_values[&tile.tile_id])),
-                );
-                Value::Object(row)
+            .map(|tile| CatalogTile {
+                tile_id: tile.tile_id.clone(),
+                ra_deg: tile.ra_deg,
+                dec_deg: tile.dec_deg,
+                nominal_exptime_seconds: tile.nominal_exptime_seconds,
+                region_id: tile.region_id.clone(),
+                scheduling_class: crate::schema::SchedulingClass::from_label(&tile.scheduling_class)
+                    .expect("tile scheduling_class is REQUIRED or FLEXIBLE"),
+                available_from_utc: format_utc(&tile.available_from_utc),
+                available_until_utc: format_utc(&tile.available_until_utc),
+                n_lrg: tile.n_lrg,
+                n_elg: tile.n_elg,
+                n_qso: tile.n_qso,
+                n_bgs: tile.n_bgs,
+                tile_science_value: round6(self.scorer.tile_values[&tile.tile_id]),
             })
             .collect();
         let required_tile_ids: Vec<String> = tiles
@@ -234,44 +229,49 @@ impl ChallengeWorkflow {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();
-        let target_catalog: Vec<Value> = self
+        let target_catalog: Vec<TargetRow> = self
             .target_catalog
             .iter()
-            .map(|row| {
-                Value::Object(
-                    TARGET_COLUMNS
-                        .iter()
-                        .enumerate()
-                        .map(|(index, column)| (column.to_string(), json!(row[index])))
-                        .collect(),
-                )
+            .map(|row| TargetRow {
+                target_id: row[0].clone(),
+                tile_id: row[1].clone(),
+                target_class: row[2].clone(),
+                feature_flux: row[3].clone(),
+                redshift: row[4].clone(),
+                science_weight: row[5].clone(),
             })
             .collect();
-        json!({
-            "schema_version": INITIAL_PUBLICATION_VERSION,
-            "calendar": {
-                "first_night": nights[0].night_date.format("%Y-%m-%d").to_string(),
-                "last_night": nights[nights.len() - 1].night_date.format("%Y-%m-%d").to_string(),
-                "night_count": nights.len(),
-                "slot_count": self.scorer.slots.len(),
-                "slot_duration_seconds": self.scorer.slots[0].duration_seconds,
+        let site: Site = serde_json::from_value(self.scorer.geometry.calendar_config["site"].clone())
+            .context("calendar config site does not match the schema")?;
+        let weather_score_interface =
+            serde_json::from_value(self.scorer.weather.config["score_interface"].clone())
+                .context("weather score interface does not match the schema")?;
+        let publication = InitialPublication {
+            schema_version: INITIAL_PUBLICATION_VERSION.to_string(),
+            calendar: CalendarSummary {
+                first_night: nights[0].night_date.format("%Y-%m-%d").to_string(),
+                last_night: nights[nights.len() - 1].night_date.format("%Y-%m-%d").to_string(),
+                night_count: nights.len() as i64,
+                slot_count: self.scorer.slots.len() as i64,
+                slot_duration_seconds: self.scorer.slots[0].duration_seconds,
             },
-            "site": self.scorer.geometry.calendar_config["site"],
-            "tile_catalog": {
-                "tile_count": tiles.len(),
-                "required_tile_ids": required_tile_ids,
-                "region_ids": region_ids,
-                "tiles": tile_rows,
+            site,
+            tile_catalog: TileCatalog {
+                tile_count: tiles.len() as i64,
+                required_tile_ids,
+                region_ids,
+                tiles: catalog_tiles,
             },
-            "target_catalog": target_catalog,
-            "scoring_contract": {
-                "score_config": self.scorer.config,
-                "weather_score_interface": self.scorer.weather.config["score_interface"],
-                "lunar_model": self.scorer.geometry.tile_config["lunar_model"],
-                "preview_semantics": "Current-snapshot estimates use the official public formula but cannot know unreleased future slot weather. Authoritative scores are computed by segmented replay.",
+            target_catalog,
+            scoring_contract: ScoringContract {
+                score_config: self.score_config.clone(),
+                weather_score_interface,
+                lunar_model: self.scorer.geometry.tile_config["lunar_model"].clone(),
+                preview_semantics: Some("Current-snapshot estimates use the official public formula but cannot know unreleased future slot weather. Authoritative scores are computed by segmented replay.".to_string()),
             },
-            "global_wallclock_seconds": self.config["global_wallclock_seconds"].as_f64().unwrap(),
-        })
+            global_wallclock_seconds: self.config["global_wallclock_seconds"].as_f64().unwrap(),
+        };
+        Ok(publication)
     }
 }
 
@@ -717,62 +717,63 @@ impl ChallengeWorkflow {
         &mut self,
         provider: &mut dyn DecisionProvider,
         wallclock_seconds: Option<f64>,
-    ) -> Result<Value> {
-        let initial = self.initial_publication();
+    ) -> Result<crate::schema::WorkflowResult> {
+        use crate::schema::{CommitLogEntry, TerminationReason, WorkflowResult};
+        let initial = self.initial_publication()?;
+        let initial_value =
+            serde_json::to_value(&initial).expect("initial publication serialization");
         let budget = wallclock_seconds
             .unwrap_or_else(|| self.config["global_wallclock_seconds"].as_f64().unwrap());
         if budget <= 0.0 {
             bail!("wallclock_seconds must be positive");
         }
-        if let Err(error) = provider.publish_initial(&initial) {
+        if let Err(error) = provider.publish_initial(&initial_value) {
             let report = self.scorer.finalize("agent_initialization_error")?;
-            return Ok(json!({
-                "schema_version": WORKFLOW_RESULT_VERSION,
-                "initial_publication": initial,
-                "termination_reason": "agent_initialization_error",
-                "global_wallclock_seconds": budget,
-                "accounted_wallclock_seconds": 0.0,
-                "ignored_in_flight_response": false,
-                "committed_action_count": 0,
-                "commit_log": [{
-                    "sequence": 0,
-                    "committed": false,
-                    "error": format!("{error}"),
+            return Ok(WorkflowResult {
+                schema_version: WORKFLOW_RESULT_VERSION.to_string(),
+                initial_publication: Some(initial),
+                termination_reason: TerminationReason::AgentInitializationError,
+                global_wallclock_seconds: budget,
+                accounted_wallclock_seconds: 0.0,
+                ignored_in_flight_response: false,
+                committed_action_count: 0,
+                commit_log: vec![CommitLogEntry::Failed {
+                    sequence: 0,
+                    error: format!("{error}"),
                 }],
-                "score_report": report,
-            }));
+                score_report: report,
+            });
         }
         let started = Instant::now();
         let deadline = started + std::time::Duration::from_secs_f64(budget);
-        let mut termination = "survey_complete";
+        let mut termination = TerminationReason::SurveyComplete;
         let mut ignored_in_flight = false;
         let mut sequence: i64 = 1;
         while self.scorer.current_slot().is_some() {
             if Instant::now() >= deadline {
-                termination = "global_wallclock_expired";
+                termination = TerminationReason::GlobalWallclockExpired;
                 break;
             }
             let snapshot = self.decision_snapshot(sequence)?;
             let response = match provider.call(&snapshot, deadline) {
                 Ok(response) => response,
                 Err(error) if is_global_deadline_expired(&error) => {
-                    termination = "global_wallclock_expired";
+                    termination = TerminationReason::GlobalWallclockExpired;
                     ignored_in_flight = true;
                     break;
                 }
                 Err(error) => {
-                    termination = "agent_error";
-                    self.commit_log.push(json!({
-                        "sequence": sequence,
-                        "committed": false,
-                        "error": format!("{error}"),
-                    }));
+                    termination = TerminationReason::AgentError;
+                    self.commit_log.push(CommitLogEntry::Failed {
+                        sequence,
+                        error: format!("{error}"),
+                    });
                     break;
                 }
             };
             let completed_at = Instant::now();
             if completed_at >= deadline {
-                termination = "global_wallclock_expired";
+                termination = TerminationReason::GlobalWallclockExpired;
                 ignored_in_flight = true;
                 break;
             }
@@ -781,56 +782,49 @@ impl ChallengeWorkflow {
                 match self.decision_from_response(sequence, &slot_id, &response) {
                     Ok(parsed) => parsed,
                     Err(error) => {
-                        termination = "agent_error";
-                        self.commit_log.push(json!({
-                            "sequence": sequence,
-                            "committed": false,
-                            "error": format!("{error}"),
-                        }));
+                        termination = TerminationReason::AgentError;
+                        self.commit_log.push(CommitLogEntry::Failed {
+                            sequence,
+                            error: format!("{error}"),
+                        });
                         break;
                     }
                 };
             let (result, report_outcomes) = self.commit(&decision, &reports)?;
-            let mut log_entry = json!({
-                "sequence": sequence,
-                "committed": true,
-                "completed_wallclock_seconds": (completed_at - started).as_secs_f64(),
-                "decision_id": decision.decision_id,
-                "outcome": result["outcome"],
+            self.commit_log.push(CommitLogEntry::Committed {
+                sequence,
+                completed_wallclock_seconds: (completed_at - started).as_secs_f64(),
+                decision_id: decision.decision_id,
+                outcome: result["outcome"].as_str().unwrap_or("").to_string(),
+                report_outcomes,
+                dropped_reports,
             });
-            if !report_outcomes.is_empty() {
-                log_entry["reports"] = json!(report_outcomes);
-            }
-            if dropped_reports > 0 {
-                log_entry["dropped_reports"] = json!(dropped_reports);
-            }
-            self.commit_log.push(log_entry);
             sequence += 1;
         }
         let now = Instant::now();
         let accounted = (now.min(deadline) - started).as_secs_f64().max(0.0);
-        let report = self.scorer.finalize(termination)?;
-        Ok(json!({
-            "schema_version": WORKFLOW_RESULT_VERSION,
-            "initial_publication": initial,
-            "termination_reason": termination,
-            "global_wallclock_seconds": budget,
-            "accounted_wallclock_seconds": accounted,
-            "ignored_in_flight_response": ignored_in_flight,
-            "committed_action_count": self.committed.len(),
-            "commit_log": self.commit_log,
-            "score_report": report,
-        }))
+        let report = self.scorer.finalize(termination.as_str())?;
+        Ok(WorkflowResult {
+            schema_version: WORKFLOW_RESULT_VERSION.to_string(),
+            initial_publication: Some(initial),
+            termination_reason: termination,
+            global_wallclock_seconds: budget,
+            accounted_wallclock_seconds: accounted,
+            ignored_in_flight_response: ignored_in_flight,
+            committed_action_count: self.committed.len(),
+            commit_log: std::mem::take(&mut self.commit_log),
+            score_report: report,
+        })
     }
 
     /// decisions.csv carries the whole trace, including report_* action rows.
-    pub fn write_outputs(&self, output_dir: &Path, result: &Value) -> Result<()> {
+    pub fn write_outputs(&self, output_dir: &Path, result: &crate::schema::WorkflowResult) -> Result<()> {
         std::fs::create_dir_all(output_dir)?;
         let rows: Vec<Vec<String>> = self.committed.iter().map(Decision::csv_row).collect();
         write_exact_csv(&output_dir.join("decisions.csv"), &DECISION_COLUMNS, &rows)?;
         crate::contracts::write_text_lf(
             &output_dir.join("workflow_result.json"),
-            &(dumps_report(result) + "\n"),
+            &(dumps_report(&serde_json::to_value(result)?) + "\n"),
         )?;
         Ok(())
     }
@@ -852,7 +846,7 @@ pub struct RunOptions {
 /// report, the summary object, and the process exit code (0 for
 /// survey_complete/global_wallclock_expired, 2 otherwise).
 pub struct RunOutcome {
-    pub result: Value,
+    pub result: crate::schema::WorkflowResult,
     pub report: Value,
     pub summary: Value,
     pub exit_code: i32,
@@ -947,14 +941,13 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
     };
     let run_result = workflow.run(provider.as_mut(), Some(wallclock));
     provider.shutdown();
-    let result = run_result?;
-    workflow.write_outputs(out_dir, &result)?;
+    let mut result = run_result?;
+    // Strip the initialize payload unless asked to keep it (same output as
+    // the old re-read/remove/rewrite pass, without the double write).
     if !options.keep_initial_publication {
-        let path = out_dir.join("workflow_result.json");
-        let mut data: Value = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
-        data.as_object_mut().unwrap().remove("initial_publication");
-        crate::contracts::write_text_lf(&path, &(dumps_report(&data) + "\n"))?;
+        result.initial_publication = None;
     }
+    workflow.write_outputs(out_dir, &result)?;
 
     // Authoritative score: replay decisions.csv with the public scorer, exactly
     // as the platform does after a run.
@@ -962,9 +955,9 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
         scenario,
         &out_dir.join("decisions.csv"),
         Some(&out_dir.join("score_report.json")),
-        result["termination_reason"].as_str().unwrap(),
+        result.termination_reason.as_str(),
     )?;
-    let live_total = result["score_report"]["score"]["total"].as_f64().unwrap();
+    let live_total = result.score_report["score"]["total"].as_f64().unwrap();
     let replay_total = report["score"]["total"].as_f64().unwrap();
     if (replay_total - live_total).abs() > 1e-6 && !options.quiet {
         eprintln!(
@@ -972,12 +965,10 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
         );
     }
     if !options.quiet {
-        for entry in result["commit_log"].as_array().unwrap() {
-            if !entry["committed"].as_bool().unwrap_or(false) {
+        for entry in &result.commit_log {
+            if let crate::schema::CommitLogEntry::Failed { sequence, error } = entry {
                 eprintln!(
-                    "[local-runner] agent error at decision {}: {} (see agent.log)",
-                    entry["sequence"],
-                    entry["error"].as_str().unwrap_or("")
+                    "[local-runner] agent error at decision {sequence}: {error} (see agent.log)"
                 );
             }
         }
@@ -992,7 +983,7 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
             .or_insert(0) += 1;
     }
     let summary = json!({
-        "termination_reason": result["termination_reason"],
+        "termination_reason": result.termination_reason,
         "total": score["total"],
         "base_science": score["base_science"],
         "program_bonus": score["program_bonus"],
@@ -1007,10 +998,10 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
             .map(|value| value.as_i64().unwrap())
             .sum::<i64>(),
         "requests": status_counts,
-        "committed_actions": result["committed_action_count"],
+        "committed_actions": result.committed_action_count,
         "final_cursor": report["final_cursor"]["timestamp_utc"],
-        "wall_seconds": format!("{:.3}", result["accounted_wallclock_seconds"].as_f64().unwrap()).parse::<f64>().unwrap(),
-        "global_wallclock_seconds": result["global_wallclock_seconds"],
+        "wall_seconds": format!("{:.3}", result.accounted_wallclock_seconds).parse::<f64>().unwrap(),
+        "global_wallclock_seconds": result.global_wallclock_seconds,
         "outputs": {
             "decisions.csv": out_dir.join("decisions.csv").to_string_lossy(),
             "workflow_result.json": out_dir.join("workflow_result.json").to_string_lossy(),
@@ -1018,8 +1009,11 @@ pub fn run_local(options: &RunOptions) -> Result<RunOutcome> {
             "agent.log": log_path.to_string_lossy(),
         },
     });
-    let termination = result["termination_reason"].as_str().unwrap();
-    let exit_code = if matches!(termination, "survey_complete" | "global_wallclock_expired") {
+    let exit_code = if matches!(
+        result.termination_reason,
+        crate::schema::TerminationReason::SurveyComplete
+            | crate::schema::TerminationReason::GlobalWallclockExpired
+    ) {
         0
     } else {
         2

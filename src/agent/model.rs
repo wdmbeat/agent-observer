@@ -1,13 +1,17 @@
-//! Rust-only typed schema layer for the agent side — the wire types the
-//! decision pipeline consumes, replacing `serde_json::Value` inside
-//! `src/agent/`. There is no Python counterpart: the Python agent passes
-//! dicts around; here the inbound JSON is decoded once at the seam
-//! (`DecisionProvider::call` / `parse_platform_message`) and the pipeline
-//! runs on typed values. `src/workflow.rs` (the producer) stays `Value`-based.
+//! Typed schema layer for the agent side — the wire types the decision
+//! pipeline consumes, replacing `serde_json::Value` inside `src/agent/`.
+//! There is no Python counterpart: the Python agent passes dicts around; here
+//! the inbound JSON is decoded once at the seam (`DecisionProvider::call` /
+//! `parse_platform_message`) and the pipeline runs on typed values.
+//!
+//! Publication-side types (`InitialPublication` and friends) live in
+//! `crate::schema` — shared with the producer in `src/workflow.rs` — and are
+//! re-exported here so agent imports stay stable. This module keeps the
+//! agent-only snapshot/decision types.
 //!
 //! Tolerance parity: fields the old code read through `number()` /
-//! `value_f64()` keep accepting numeric strings (`string_or_number`);
-//! timestamps the old code parsed leniently decode to `Option<DateTime>`.
+//! `value_f64()` keep accepting numeric strings; timestamps the old code
+//! parsed leniently decode to `Option<DateTime>`.
 
 use std::collections::BTreeMap;
 
@@ -15,98 +19,18 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::contracts::{format_utc, parse_utc};
+use crate::contracts::parse_utc;
+use crate::schema::{
+    fmt_utc, opt_string_or_number, string_or_number, utc_lenient, utc_strict, value_to_f64,
+};
 
-/// Python `float(value)`: numbers pass through, numeric strings parse
-/// (`scoring_preview.py`'s `number()` / `anomaly_detection.py`'s `value_f64()`).
-fn value_to_f64(value: &Value) -> Option<f64> {
-    match value {
-        Value::Number(number) => number.as_f64(),
-        Value::String(text) => text.trim().parse().ok(),
-        _ => None,
-    }
-}
-
-fn string_or_number<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
-    let value = Value::deserialize(deserializer)?;
-    value_to_f64(&value).ok_or_else(|| serde::de::Error::custom("must be numeric"))
-}
-
-fn opt_string_or_number<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<f64>, D::Error> {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.as_ref().and_then(value_to_f64))
-}
-
-/// Strict contract-timestamp field (the old code propagated the parse error).
-fn utc_strict<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<DateTime<Utc>, D::Error> {
-    let text = String::deserialize(deserializer)?;
-    parse_utc(&text).map_err(serde::de::Error::custom)
-}
-
-/// Lenient timestamp field: absent/null/unparseable → `None`
-/// (`parse_utc_lenient`).
-fn utc_lenient<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<DateTime<Utc>>, D::Error> {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value
-        .as_ref()
-        .and_then(Value::as_str)
-        .and_then(|text| parse_utc(text).ok()))
-}
-
-fn fmt_utc<S: serde::Serializer>(
-    moment: &DateTime<Utc>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&format_utc(moment))
-}
-
-/// The three observing programs. Declaration order doubles as the sort key:
-/// `Backup < Bright < Dark` matches the old lexicographic string ordering
-/// ("BACKUP" < "BRIGHT" < "DARK") the preview sort depends on.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
-pub enum Program {
-    #[serde(rename = "BACKUP")]
-    Backup,
-    #[serde(rename = "BRIGHT")]
-    Bright,
-    #[serde(rename = "DARK")]
-    Dark,
-}
-
-impl Program {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Program::Backup => "BACKUP",
-            Program::Bright => "BRIGHT",
-            Program::Dark => "DARK",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum SchedulingClass {
-    #[serde(rename = "REQUIRED")]
-    Required,
-    #[serde(rename = "FLEXIBLE")]
-    Flexible,
-}
-
-impl SchedulingClass {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SchedulingClass::Required => "REQUIRED",
-            SchedulingClass::Flexible => "FLEXIBLE",
-        }
-    }
-}
+// The publication-side schema lives in `crate::schema`; re-exported so the
+// agent modules keep importing from `super::model`.
+pub use crate::schema::{
+    CalendarSummary, CatalogTile, InitialPublication, Penalties, Program, ProgramBonus,
+    QualityThresholds, ScoreConfig, ScoringContract, SchedulingClass, Site, TargetRow, TileCatalog,
+    WeatherScoreInterface,
+};
 
 /// Decision-snapshot schema versions the agent accepts (practice scenarios
 /// speak the pre-anomaly v2 contract).
@@ -255,155 +179,6 @@ impl<'de> Deserialize<'de> for FaultStatus {
             ))),
         }
     }
-}
-
-/// The one-time public bootstrap (`initial-publication-v2`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct InitialPublication {
-    pub schema_version: String,
-    pub calendar: CalendarSummary,
-    pub site: Site,
-    pub tile_catalog: TileCatalog,
-    /// Unused by the agent — stays shallow.
-    #[serde(default)]
-    pub target_catalog: Value,
-    pub scoring_contract: ScoringContract,
-    #[serde(deserialize_with = "string_or_number")]
-    pub global_wallclock_seconds: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct CalendarSummary {
-    pub first_night: String,
-    pub last_night: String,
-    pub night_count: i64,
-    pub slot_count: i64,
-    pub slot_duration_seconds: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Site {
-    #[serde(deserialize_with = "string_or_number")]
-    pub latitude_deg: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub longitude_deg: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub utc_offset_hours: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub sun_altitude_limit_deg: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct TileCatalog {
-    pub tile_count: i64,
-    pub required_tile_ids: Vec<String>,
-    pub region_ids: Vec<String>,
-    pub tiles: Vec<CatalogTile>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct CatalogTile {
-    pub tile_id: String,
-    /// Arrives as a numeric STRING on the wire (CSV-formatted float).
-    #[serde(deserialize_with = "string_or_number")]
-    pub ra_deg: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub dec_deg: f64,
-    pub nominal_exptime_seconds: i64,
-    pub region_id: String,
-    pub scheduling_class: SchedulingClass,
-    pub available_from_utc: String,
-    pub available_until_utc: String,
-    #[serde(deserialize_with = "string_or_number")]
-    pub tile_science_value: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ScoringContract {
-    pub score_config: ScoreConfig,
-    pub weather_score_interface: WeatherScoreInterface,
-    /// Unread by the agent — stays shallow.
-    #[serde(default)]
-    pub lunar_model: Value,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ScoreConfig {
-    pub schema_version: String,
-    pub quality_thresholds: QualityThresholds,
-    pub program_bonus: ProgramBonus,
-    pub penalties: Penalties,
-    #[serde(default)]
-    pub flexible_quota_per_region: i64,
-    #[serde(default, deserialize_with = "opt_string_or_number")]
-    pub coverage_bonus_weight: Option<f64>,
-    // Present in the shipped configs but unread by the agent — shallow.
-    #[serde(default)]
-    pub repeat_observation: Option<Value>,
-    #[serde(default)]
-    pub reporting: Option<Value>,
-    #[serde(default)]
-    pub anomaly_tags: Option<Value>,
-    #[serde(default)]
-    pub fault_response: Option<Value>,
-    #[serde(default)]
-    pub one_ordinary_credit_per_tile: Option<bool>,
-    #[serde(default, deserialize_with = "opt_string_or_number")]
-    pub interrupted_exposure_science_score: Option<f64>,
-    #[serde(default)]
-    pub coefficient_status: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct QualityThresholds {
-    #[serde(deserialize_with = "string_or_number")]
-    pub dark: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub bright: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ProgramBonus {
-    #[serde(rename = "DARK", deserialize_with = "string_or_number")]
-    pub dark: f64,
-    #[serde(rename = "BRIGHT", deserialize_with = "string_or_number")]
-    pub bright: f64,
-    #[serde(rename = "BACKUP", deserialize_with = "string_or_number")]
-    pub backup: f64,
-}
-
-impl ProgramBonus {
-    pub fn for_program(&self, program: Program) -> f64 {
-        match program {
-            Program::Dark => self.dark,
-            Program::Bright => self.bright,
-            Program::Backup => self.backup,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Penalties {
-    #[serde(deserialize_with = "string_or_number")]
-    pub unsafe_observation: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub invalid_action: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub avoidable_wait_per_second: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub required_miss: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub flexible_shortfall_per_tile: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct WeatherScoreInterface {
-    #[serde(deserialize_with = "string_or_number")]
-    pub airmass_exponent: f64,
-    #[serde(deserialize_with = "string_or_number")]
-    pub maximum_weather_quality: f64,
-    #[serde(default)]
-    pub formula: Option<String>,
 }
 
 /// The per-decision platform snapshot (v2 practice or v3 anomaly mechanics).
@@ -594,28 +369,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn string_or_number_accepts_both_wire_forms() {
-        let from_string: CatalogTile = serde_json::from_value(json!({
-            "tile_id": "T00041", "ra_deg": "37.505464", "dec_deg": "-1.532928",
-            "nominal_exptime_seconds": 450, "region_id": "R03",
-            "scheduling_class": "REQUIRED",
-            "available_from_utc": "2026-10-06T02:00:00Z",
-            "available_until_utc": "2026-10-08T10:00:00Z",
-            "tile_science_value": 129.372331,
-        }))
-        .unwrap();
-        assert_eq!(from_string.ra_deg, 37.505464);
-        assert_eq!(from_string.dec_deg, -1.532928);
-        assert_eq!(from_string.scheduling_class, SchedulingClass::Required);
-        let from_number: Site = serde_json::from_value(json!({
-            "latitude_deg": 31.9634, "longitude_deg": -111.599,
-            "utc_offset_hours": -7, "sun_altitude_limit_deg": "-12.0",
-        }))
-        .unwrap();
-        assert_eq!(from_number.sun_altitude_limit_deg, -12.0);
-    }
-
-    #[test]
     fn report_tag_round_trip() {
         let nova = Report::Nova { tile_id: "T00041".to_string() };
         assert_eq!(serde_json::to_value(&nova).unwrap(), json!({"kind": "NOVA", "tile_id": "T00041"}));
@@ -712,17 +465,6 @@ mod tests {
                 published_at_utc: parse_utc("2026-10-07T02:00:00Z").ok(),
             }
         );
-    }
-
-    #[test]
-    fn program_order_matches_the_old_string_sort() {
-        let mut programs = [Program::Dark, Program::Backup, Program::Bright];
-        programs.sort();
-        assert_eq!(programs, [Program::Backup, Program::Bright, Program::Dark]);
-        let mut names = ["DARK", "BACKUP", "BRIGHT"];
-        names.sort();
-        let as_strings: Vec<&str> = programs.iter().map(Program::as_str).collect();
-        assert_eq!(as_strings, names);
     }
 
     #[test]
