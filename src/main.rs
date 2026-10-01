@@ -108,7 +108,7 @@ impl AgentCommand {
 const RUN_EXAMPLES: &str = "\
 Examples:
   agent-observer run --scenario <dir> --out out rust baseline
-  agent-observer run --scenario <dir> --out out python ../../agent-observer-starter-kit/agent/minimal_agent.py
+  agent-observer run --scenario <dir> --out out python tmp/agent-observer-starter-kit/agent/minimal_agent.py
   agent-observer run --scenario <dir> --out out external \"python3 /path/to/agent.py\" --agent-dir /path/to";
 
 fn main() -> Result<()> {

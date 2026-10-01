@@ -20,7 +20,7 @@ const EXPECTED_TOTALS: [(&str, f64); 3] = [
 
 fn python_agent_script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../agent-observer-starter-kit/agent/minimal_agent.py")
+        .join("tmp/agent-observer-starter-kit/agent/minimal_agent.py")
 }
 
 #[test]

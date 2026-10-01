@@ -17,7 +17,7 @@ pub fn scenarios_root() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../agent-observer-starter-kit/scenarios")
+                .join("tmp/agent-observer-starter-kit/scenarios")
         })
 }
 

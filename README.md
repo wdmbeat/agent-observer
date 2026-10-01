@@ -2,7 +2,7 @@
 
 A faithful Rust port of the **runtime core** of the agent-observer
 telescope-survey competition kit (Python original at
-`../../agent-observer-starter-kit`). It replays a survey against a scenario,
+`tmp/agent-observer-starter-kit`). It replays a survey against a scenario,
 drives an agent through the platform's decision loop, and scores the resulting
 trace — bit-for-bit compatible with the Python implementation on all bundled
 scenarios.
@@ -22,7 +22,7 @@ Run a survey with the built-in deterministic agent (no Python required):
 
 ```
 ./target/release/agent-observer run \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --out out/demo-week \
     rust baseline
 ```
@@ -33,9 +33,9 @@ Run the Python reference agent through the JSON-Lines subprocess transport
 
 ```
 ./target/release/agent-observer run \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --out out/demo-week-py \
-    python ../../agent-observer-starter-kit/agent/minimal_agent.py
+    python tmp/agent-observer-starter-kit/agent/minimal_agent.py
 ```
 
 (`python <script>` spawns `python3 -B <script>` with cwd = the script's
@@ -48,7 +48,7 @@ write a file, `--termination-reason` to override the default `trace_complete`):
 
 ```
 ./target/release/agent-observer score \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --decisions out/demo-week/decisions.csv
 ```
 
@@ -185,7 +185,7 @@ checkout is not next to this crate), the `rust baseline` agent, and the
 `rust reference` agent against the golden-reference runs.
 
 Scenarios are located via the `AGENT_OBSERVER_SCENARIOS` env var, defaulting
-to `../../agent-observer-starter-kit/scenarios` relative to this crate.
+to `tmp/agent-observer-starter-kit/scenarios` relative to this crate.
 
 ## Writing your own strategy
 
