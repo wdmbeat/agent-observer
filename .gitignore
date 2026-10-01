@@ -1,3 +1,4 @@
+tmp
 /target/
 
 # Golden run artifacts: the tests only read decisions.csv and score_report.json.
