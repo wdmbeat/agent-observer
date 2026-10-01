@@ -12,8 +12,8 @@ use serde_json::Value;
 
 use crate::contracts::{epoch_seconds, parse_utc};
 
-use super::builtin::{Selection, Selector};
-use super::preview::CandidatePreview;
+use super::decision_graph::{Selection, Selector};
+use super::scoring_preview::CandidatePreview;
 
 // These numbers come from the public score_config.json; keep them in sync if
 // the competition configuration changes. (Documentation constants: the rules

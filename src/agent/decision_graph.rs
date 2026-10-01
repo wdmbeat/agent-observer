@@ -1,22 +1,25 @@
-//! Shared deterministic decision pipeline — port of `agent/decision_graph.py`
-//! (deterministic path only: no LLM, no LangGraph) plus the
-//! `minimal_agent.py`/`protocol.py` response envelope.
+//! Port of `agent/decision_graph.py` — the deterministic decision pipeline
+//! (no LLM, no LangGraph) plus `minimal_agent.py`'s `MinimalDecisionAgent`
+//! facade.
 //!
-//! The pipeline is fixed (anomaly reports → fault-scope filter → previews →
-//! selection → detector suspect override → note_observation → envelope); only
-//! the candidate-selection step differs between strategies. `BuiltinAgent` is
-//! the baseline selector; `reference.rs` plugs in the worked teaching example.
+//! The pipeline is fixed (detector.process_snapshot → fault-scope filter →
+//! preview_actions → selector → detector suspect override → note_observation →
+//! protocol envelope); only the candidate-selection step differs between
+//! strategies. The `Selector` trait plays the role of the `choose_action`
+//! seam: `my_strategy.rs` holds the baseline, `reference_strategy.rs` the
+//! worked teaching example.
 
 use std::time::Instant;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use serde_json::{json, Value};
 
-use crate::contracts::PARTICIPANT_PROTOCOL_VERSION;
 use crate::workflow::DecisionProvider;
 
-use super::anomaly::AnomalyDetector;
-use super::preview::{preview_actions, CandidatePreview};
+use super::my_strategy::BaselineSelector;
+use super::protocol;
+use super::scoring_preview::{preview_actions, CandidatePreview};
+use super::state::RunState;
 
 /// One picked action, mirroring the decision dict the graph's finalize stage
 /// produces.
@@ -46,43 +49,16 @@ pub trait Selector {
     ) -> Selection;
 }
 
-/// Default policy: trust the platform ranking — observe previews[0].
-///
-/// The shipped `my_strategy.choose_action` returns `candidates[0]` with no
-/// reason, which the Python graph treats as agreement with the default ranking
-/// (returns None) — so this selector is exactly what the shipped agent does.
-#[derive(Default)]
-pub struct BaselineSelector;
-
-impl Selector for BaselineSelector {
-    fn select(&mut self, previews: &[CandidatePreview], _snapshot: &Value, _publication: &Value) -> Selection {
-        match previews.first() {
-            None => Selection::Wait {
-                reason: "no legal observable candidate can finish in its known window".to_string(),
-                source: "deterministic",
-            },
-            Some(best) => Selection::Observe {
-                tile_id: best.tile_id.clone(),
-                program: best.program.clone(),
-                request_id: best.request_id.clone(),
-                reason: "highest public current-snapshot estimate".to_string(),
-                source: "deterministic",
-            },
-        }
-    }
-}
-
 /// The deterministic agent facade: anomaly tracking plus one selection per
 /// snapshot. `S` is the selection strategy.
 pub struct DeterministicAgent<S> {
-    initial_publication: Option<Value>,
-    detector: Option<AnomalyDetector>,
+    state: RunState,
     selector: S,
 }
 
 impl<S: Default> Default for DeterministicAgent<S> {
     fn default() -> Self {
-        Self { initial_publication: None, detector: None, selector: S::default() }
+        Self { state: RunState::default(), selector: S::default() }
     }
 }
 
@@ -97,18 +73,20 @@ impl BuiltinAgent {
 
 impl<S> DeterministicAgent<S> {
     pub fn with_selector(selector: S) -> Self {
-        Self { initial_publication: None, detector: None, selector }
+        Self { state: RunState::default(), selector }
     }
 }
 
 impl<S: Selector> DeterministicAgent<S> {
     /// `MinimalDecisionAgent.decide`: one decision for one snapshot.
     pub fn decide(&mut self, snapshot: &Value) -> Result<Value> {
-        let Self { initial_publication, detector, selector } = self;
-        let publication = initial_publication
+        let Self { state, selector } = self;
+        let publication = state
+            .initial_publication
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
-        let detector = detector
+        let detector = state
+            .detector
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("decision_request received before initialize"))?;
         // Practice scenarios speak the pre-anomaly snapshot: no score feedback,
@@ -178,35 +156,17 @@ impl<S: Selector> DeterministicAgent<S> {
         } else if mechanics {
             detector.note_observation(None, None, false);
         }
-        // protocol.py::decision_response (always speaks v2, both are accepted).
-        let mut envelope = json!({
-            "protocol_version": PARTICIPANT_PROTOCOL_VERSION,
-            "message_type": "decision_response",
-            "decision_sequence": snapshot["decision_sequence"],
-            "action": decision["action"],
-            "tile_id": decision["tile_id"],
-            "program": decision["program"],
-            "request_id": decision["request_id"],
-            "reason": decision["reason"],
-            "decision_source": decision["decision_source"],
-        });
-        if !reports.is_empty() {
-            envelope["reports"] = Value::Array(reports);
-        }
-        Ok(envelope)
+        Ok(protocol::decision_response(
+            &snapshot["decision_sequence"],
+            &decision,
+            reports,
+        ))
     }
 }
 
 impl<S: Selector> DecisionProvider for DeterministicAgent<S> {
     fn publish_initial(&mut self, publication: &Value) -> Result<()> {
-        if publication["schema_version"].as_str()
-            != Some(crate::contracts::INITIAL_PUBLICATION_VERSION)
-        {
-            bail!("unsupported initial publication schema_version");
-        }
-        self.detector = Some(AnomalyDetector::new(publication));
-        self.initial_publication = Some(publication.clone());
-        Ok(())
+        self.state.publish_initial(publication)
     }
 
     fn call(&mut self, snapshot: &Value, _deadline: Instant) -> Result<Value> {

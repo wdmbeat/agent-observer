@@ -88,9 +88,11 @@ The agent is chosen by a trailing subcommand — `rust <STRATEGY>`,
   scrubbed environment, `.env` loading, 30s initialization deadline, global
   wall-clock cutoff, and process-group kill (SIGTERM then SIGKILL).
 - **Deterministic agent** (`src/agent/`): the shipped reference strategy —
-  public-formula preview ranking (`preview.rs`), the anomaly detector with
-  nova/reddening/instrument-fault reporting (`anomaly.rs`), and the decision
-  pipeline (`builtin.rs`).
+  public-formula preview ranking (`scoring_preview.rs`), the anomaly detector
+  with nova/reddening/instrument-fault reporting (`anomaly_detection.rs`), and
+  the decision pipeline (`decision_graph.rs`). The `src/agent/` file layout
+  mirrors the Python kit's `agent/` directory one-to-one (see the mapping
+  table in `src/agent/mod.rs`).
 
 ## Deliberately not ported
 
@@ -122,7 +124,7 @@ the native `rust baseline`.
 ### `rust reference` — the teaching strategy
 
 A second native strategy ports the kit's `reference_strategy.py`
-(`src/agent/reference.rs`): trust the platform's gain-per-second ranking, and
+(`src/agent/reference_strategy.rs`): trust the platform's gain-per-second ranking, and
 override it only when an end-of-game account is about to come due — a REQUIRED
 tile with at most `LAST_CHANCES` (=2) published windows left, or, when the
 score config carries a `coverage_bonus_weight` (competition scenarios), a
@@ -188,16 +190,16 @@ to `../../agent-observer-starter-kit/scenarios` relative to this crate.
 ## Writing your own strategy
 
 Plug in at `src/agent/`: implement the `Selector` trait
-(`src/agent/builtin.rs`) — one method, `select(&previews, &snapshot,
+(`src/agent/decision_graph.rs`) — one method, `select(&previews, &snapshot,
 &publication) -> Selection`, called once per decision with the ranked
 candidates — then add a case to the `Strategy` enum in
 `src/agent/strategy.rs`. `DeterministicAgent` runs the shared pipeline
 (anomaly reports, fault-scope filter, previews, detector suspect override,
 feedback bookkeeping, response envelope) around your selection; the anomaly
-detector needs no strategy-side work. `src/agent/reference.rs` is a worked
+detector needs no strategy-side work. `src/agent/reference_strategy.rs` is a worked
 example with toggleable rules. The deterministic default ("observe the
 top-ranked preview") and the ranked candidates come from `preview_actions` in
-`src/agent/preview.rs`, where each `CandidatePreview` exposes:
+`src/agent/scoring_preview.rs`, where each `CandidatePreview` exposes:
 
 - `tile_id`, `program`, `request_id`, `region_id`, `scheduling_class`,
   `nominal_exptime_seconds`
@@ -210,7 +212,7 @@ top-ranked preview") and the ranked candidates come from `preview_actions` in
 The snapshot also carries `active_requests` (with remaining visits),
 `progress`, `night_start`/`weekly` publications, and — under the v3 anomaly
 mechanics — `tile_last_finished` feedback and `fault_status` publications,
-which `AnomalyDetector` in `src/agent/anomaly.rs` turns into calibrated
+which `AnomalyDetector` in `src/agent/anomaly_detection.rs` turns into calibrated
 reports. Anomaly thresholds are env-overridable via `SAC_ANOMALY_*`.
 
 To try a strategy end-to-end: add your selector, then

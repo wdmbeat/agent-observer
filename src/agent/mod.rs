@@ -1,10 +1,32 @@
 //! Native deterministic agent — port of the `agent/` Python package
 //! (deterministic path; no LLM, no LangGraph).
+//!
+//! The file layout mirrors the Python kit's `agent/` directory so the two
+//! implementations can be compared side by side:
+//!
+//! | Python (`agent/`)         | Rust (`src/agent/`)      |
+//! |---------------------------|--------------------------|
+//! | `minimal_agent.py`        | *(no counterpart — the in-process agent has no JSONL loop; `src/transport.rs` covers the subprocess side)* |
+//! | `protocol.py`             | `protocol.rs`            |
+//! | `decision_graph.py`       | `decision_graph.rs`      |
+//! | `state.py`                | `state.rs`               |
+//! | `scoring_preview.py`      | `scoring_preview.rs`     |
+//! | `anomaly_detection.py`    | `anomaly_detection.rs`   |
+//! | `my_strategy.py`          | `my_strategy.rs`         |
+//! | `reference_strategy.py`   | `reference_strategy.rs`  |
+//! | `model_factory.py`        | *(deliberately absent: no LLM support)* |
+//!
+//! `strategy.rs` is Rust-only CLI glue (the `Strategy` value-enum and agent
+//! factory) with no Python counterpart. This `mod.rs` additionally holds
+//! `AgentSpec`, the typed agent selection shared by the CLI and the library.
 
-pub mod anomaly;
-pub mod builtin;
-pub mod preview;
-pub mod reference;
+pub mod anomaly_detection;
+pub mod decision_graph;
+pub mod my_strategy;
+pub mod protocol;
+pub mod reference_strategy;
+pub mod scoring_preview;
+pub mod state;
 pub mod strategy;
 
 use std::path::PathBuf;

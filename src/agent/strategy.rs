@@ -1,12 +1,14 @@
-//! Typed strategy selection for the in-process agent.
+//! Typed strategy selection for the in-process agent. Rust-only CLI glue with
+//! no Python counterpart (the Python kit picks its strategy via the editable
+//! `my_strategy.py` file instead).
 //!
 //! Adding a strategy = add an enum case + a module; `Strategy::build` is the
 //! factory the workflow uses to construct the in-process agent.
 
 use crate::workflow::DecisionProvider;
 
-use super::builtin::{BuiltinAgent, DeterministicAgent};
-use super::reference::ReferenceSelector;
+use super::decision_graph::{BuiltinAgent, DeterministicAgent};
+use super::reference_strategy::ReferenceSelector;
 
 /// Native deterministic strategies, selectable on the CLI (`rust <STRATEGY>`)
 /// and programmatically via `AgentSpec::Builtin`.

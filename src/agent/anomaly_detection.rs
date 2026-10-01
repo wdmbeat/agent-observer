@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::contracts::parse_utc;
 use crate::geometry::angular_separation_deg;
 
-use super::preview::CandidatePreview;
+use super::scoring_preview::CandidatePreview;
 
 fn float_env(name: &str, default: f64) -> f64 {
     std::env::var(name)
