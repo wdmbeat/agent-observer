@@ -1,0 +1,9 @@
+{
+  "schema_version": "observer-project-v1",
+  "protocol": "jsonl-v2",
+  "image": "rust:1-bookworm",
+  "build": [["cargo", "build", "--release", "--bin", "sac-agent"]],
+  "run": ["./target/release/sac-agent"],
+  "working_directory": ".",
+  "environment": {"CARGO_HOME": "/workspace/.cargo", "MODEL_PROVIDER": "deterministic"}
+}
