@@ -14,7 +14,7 @@
 //! | `anomaly_detection.py`    | `anomaly_detection.rs`   |
 //! | `my_strategy.py`          | `my_strategy.rs`         |
 //! | `reference_strategy.py`   | `reference_strategy.rs`  |
-//! | `model_factory.py`        | *(deliberately absent: no LLM support)* |
+//! | `model_factory.py`        | `model_factory.rs` *(placeholder: `todo!()` stubs, no LLM support yet)* |
 //!
 //! `strategy.rs` is Rust-only CLI glue (the `Strategy` value-enum and agent
 //! factory) with no Python counterpart. This `mod.rs` additionally holds
@@ -22,6 +22,7 @@
 
 pub mod anomaly_detection;
 pub mod decision_graph;
+pub mod model_factory;
 pub mod my_strategy;
 pub mod protocol;
 pub mod reference_strategy;
