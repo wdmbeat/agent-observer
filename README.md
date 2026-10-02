@@ -267,6 +267,9 @@ deliberately detached from the main build):
   sac-agent, then print their totals side by side.
 - `cargo xtask pack [--out my-agent.zip]` — build the submission ZIP and
   verify the platform build from it (below).
+- `cargo xtask book [--build]` — build and serve the strategy book (`book/`,
+  mdBook; install with `cargo install mdbook`) with live reload, opening a
+  browser; `--build` does a one-shot build into `book/book/` instead.
 
 ## Submitting to the platform
 

@@ -52,6 +52,12 @@ enum Task {
         #[arg(long, default_value = "my-agent.zip")]
         out: PathBuf,
     },
+    /// Serve the strategy book with live reload (mdBook: builds, opens a browser, blocks)
+    Book {
+        /// One-shot build into book/book/ instead of serving
+        #[arg(long)]
+        build: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -361,5 +367,38 @@ fn main() -> Result<()> {
         Task::Gate => task_gate(&root),
         Task::Compare { scenario, release } => task_compare(&root, &scenario, release),
         Task::Pack { out } => task_pack(&root, &out),
+        Task::Book { build } => task_book(&root, build),
     }
+}
+
+/// Build and serve the mdBook strategy notes (live reload, opens a browser);
+/// `--build` does a one-shot build into book/book/ instead. `mdbook` must be
+/// on PATH (`cargo install mdbook`, or a release binary in ~/.cargo/bin).
+fn task_book(root: &Path, build_only: bool) -> Result<()> {
+    let mdbook = Command::new("mdbook")
+        .arg("--version")
+        .output()
+        .map_err(|_| anyhow::anyhow!(
+            "mdbook not found on PATH; install it with `cargo install mdbook`"
+        ))?;
+    if !mdbook.status.success() {
+        bail!("mdbook not found on PATH; install it with `cargo install mdbook`");
+    }
+    let book_dir = root.join("book");
+    let mut command = Command::new("mdbook");
+    if build_only {
+        command.arg("build").arg(&book_dir);
+    } else {
+        command.arg("serve").arg(&book_dir).arg("--open");
+    }
+    command
+        .current_dir(root)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    run_inherited(&mut command)?;
+    if build_only {
+        println!("book built: {}", book_dir.join("book").join("index.html").display());
+    }
+    Ok(())
 }

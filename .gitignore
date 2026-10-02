@@ -1,5 +1,6 @@
 tmp
 /target/
+/book/book/
 /out/
 /my-agent.zip
 .env
