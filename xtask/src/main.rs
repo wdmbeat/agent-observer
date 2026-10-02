@@ -374,6 +374,10 @@ fn main() -> Result<()> {
 /// Build and serve the mdBook strategy notes (live reload, opens a browser);
 /// `--build` does a one-shot build into book/book/ instead. `mdbook` must be
 /// on PATH (`cargo install mdbook`, or a release binary in ~/.cargo/bin).
+///
+/// The browser is opened by us, not `mdbook serve --open`: mdbook's opener
+/// only knows wslview/xdg-open, which are absent on minimal WSL setups —
+/// there the reliable path is Windows interop (`cmd.exe /c start`).
 fn task_book(root: &Path, build_only: bool) -> Result<()> {
     let mdbook = Command::new("mdbook")
         .arg("--version")
@@ -385,20 +389,99 @@ fn task_book(root: &Path, build_only: bool) -> Result<()> {
         bail!("mdbook not found on PATH; install it with `cargo install mdbook`");
     }
     let book_dir = root.join("book");
-    let mut command = Command::new("mdbook");
     if build_only {
-        command.arg("build").arg(&book_dir);
-    } else {
-        command.arg("serve").arg(&book_dir).arg("--open");
+        let mut command = Command::new("mdbook");
+        command
+            .arg("build")
+            .arg(&book_dir)
+            .current_dir(root)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        run_inherited(&mut command)?;
+        println!("book built: {}", book_dir.join("book").join("index.html").display());
+        return Ok(());
     }
-    command
+    const URL: &str = "http://localhost:3000";
+    let mut serve = Command::new("mdbook")
+        .arg("serve")
+        .arg(&book_dir)
         .current_dir(root)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-    run_inherited(&mut command)?;
-    if build_only {
-        println!("book built: {}", book_dir.join("book").join("index.html").display());
+        .stderr(Stdio::inherit())
+        .spawn()
+        .context("spawning mdbook serve")?;
+    // Give the server a moment to come up before pointing a browser at it.
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    match browser_opener() {
+        Some(mut opener) => {
+            let opened = opener
+                .arg(URL)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if opened {
+                println!("opened {URL} in your browser");
+            } else {
+                println!("book is served at {URL} (browser could not be opened)");
+            }
+        }
+        None => println!("book is served at {URL} (no browser opener found on this machine)"),
+    }
+    let status = serve.wait().context("waiting on mdbook serve")?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
     Ok(())
+}
+
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+        .unwrap_or(false)
+}
+
+fn is_wsl() -> bool {
+    std::fs::read_to_string("/proc/version")
+        .map(|text| text.to_lowercase().contains("microsoft"))
+        .unwrap_or(false)
+}
+
+/// Best browser opener for this machine: WSL interop (the Windows default
+/// browser), then the platform-native openers. On WSL, `SAC_BROWSER` can
+/// force a specific browser (`edge` / `chrome` / `firefox`) instead of the
+/// Windows default.
+fn browser_opener() -> Option<Command> {
+    if is_wsl() && on_path("cmd.exe") {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/c", "start", ""]);
+        if let Ok(browser) = std::env::var("SAC_BROWSER") {
+            let exe = match browser.trim().to_lowercase().as_str() {
+                "edge" => "msedge",
+                "chrome" => "chrome",
+                "firefox" => "firefox",
+                _ => "",
+            };
+            if !exe.is_empty() {
+                command.arg(exe);
+            }
+        }
+        return Some(command);
+    }
+    if cfg!(target_os = "macos") {
+        return Some(Command::new("open"));
+    }
+    if cfg!(target_os = "windows") {
+        let mut command = Command::new("cmd");
+        command.args(["/c", "start", ""]);
+        return Some(command);
+    }
+    if on_path("xdg-open") {
+        return Some(Command::new("xdg-open"));
+    }
+    None
 }
