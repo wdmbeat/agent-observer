@@ -118,6 +118,17 @@ pub enum FaultScope {
 impl FaultScope {
     /// Decode the two-field wire shape (`spatial_scope_type` +
     /// `spatial_scope_payload`, payload possibly absent/null).
+    ///
+    /// Why not `#[derive(Deserialize)]`? The wire encodes "which scope" and
+    /// "the scope's data" as two SIBLING keys — the first is the tag, the
+    /// second is a tag-dependent object. Serde's derive representations
+    /// (external / internal / adjacent / untagged) cannot express a tag that
+    /// lives in one key while its payload lives in another; an adjacently
+    /// tagged enum would need `{"scope": {...}}` to nest both under one key,
+    /// which the platform does not send. On top of the shape, the tolerated
+    /// inputs are logic, not structure: numeric strings ("12.5" for 12.5)
+    /// and an absent/null payload (legal for `ALL`). Hand-decoding keeps
+    /// those rules in one place, pinned by the unit tests below.
     pub fn from_wire(scope_type: &str, payload: Option<&Value>) -> Result<Self, String> {
         let field = |key: &str| {
             payload
@@ -190,6 +201,25 @@ pub enum FaultStatus {
     },
 }
 
+/// Hand-written because the platform's wire shape escapes serde's derive
+/// model (see `FaultScope::from_wire` for the scope half):
+///
+/// 1. The discriminant is `status` ("fault"/"normal"), but the `Fault`
+///    variant's `scope` field has no `scope` key on the wire — the scope is
+///    flattened into the same object as two keys (`spatial_scope_type` +
+///    `spatial_scope_payload`). `#[serde(tag = "status")]` cannot lift a
+///    two-key encoding into one field, and `#[serde(flatten)]` is not
+///    supported inside internally tagged enums.
+/// 2. The leniency is behavior, not shape: lenient timestamps (unparseable
+///    → `None`, not an error), numeric strings for the multiplier, and a
+///    missing/null scope payload for `ALL` faults — all preserved from the
+///    pre-typed `Value` parser the golden runs were produced with.
+///
+/// The implementation therefore decodes to an intermediate `Value`,
+/// dispatches on `status`, and delegates the scope to
+/// `FaultScope::from_wire`. Unknown statuses are a hard error: the platform
+/// only ever sends these two, and silently accepting a third would hide a
+/// protocol change.
 impl<'de> Deserialize<'de> for FaultStatus {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = Value::deserialize(deserializer)?;
