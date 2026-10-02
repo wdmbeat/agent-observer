@@ -65,6 +65,31 @@ Jain(x)        = (Σx)² / (n · Σx²)      over completed tiles per region
 1.0 when completions are spread evenly across all 8 regions, 1/8 when one
 region takes everything.
 
+## Versioning and the living contract
+
+Every protocol document names its contract revision in a `schema_version`
+field: `participant-agent-protocol-v2` for the envelopes,
+`initial-publication-v2` for the initialize payload, `decision-snapshot-v2`
+or `-v3` for each snapshot (v3 is the anomaly mechanics), and
+`challenge-score-v3` for the score configuration. An agent should validate
+the version on arrival and fail loudly on one it does not know — a version
+bump is how the platform announces a contract change.
+
+Crucially, `initialize` does not just describe the *shape* of the scoring —
+it delivers the scoring **constants themselves**, per scenario: the quality
+thresholds and program bonuses, every penalty amount, the request reward and
+miss penalty, the report settlements, the coverage weight, and the
+fault-repair parameters. These are calibration values, not laws of nature:
+practice scenarios ship `coverage_bonus_weight = 0` while competition
+scenarios use 0.35, and the organizers state that the constants are
+provisional until the online competition opens — any change is announced
+with a version bump and applies to every submission of the phase.
+
+The consequence is a design rule: **never hardcode scoring constants in a
+strategy** — read them from `scoring_contract.score_config` at runtime. An
+agent that does so adapts automatically to recalibration; one that bakes in
+1000 / 100 / 140 / 190 plans with yesterday's numbers.
+
 ## The hidden layer (v3 mechanics)
 
 Competition scenarios hide three things the agent can only infer from

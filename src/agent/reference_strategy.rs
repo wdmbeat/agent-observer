@@ -14,14 +14,12 @@ use super::decision_graph::{Selection, Selector};
 use super::model::{DecisionSnapshot, InitialPublication};
 use super::scoring_preview::CandidatePreview;
 
-// These numbers come from the public score_config.json; keep them in sync if
-// the competition configuration changes. (Documentation constants: the rules
-// below read the live snapshot/config values, like the Python original.)
-pub const MISS_REQUIRED: f64 = 1000.0; // per unfinished REQUIRED tile
-pub const SHORT_FLEXIBLE: f64 = 100.0; // per missing FLEXIBLE tile under quota
-pub const FLEXIBLE_QUOTA: i64 = 4; // completed FLEXIBLE tiles needed per region
-pub const REQUEST_REWARD: f64 = 140.0; // per required tile on completion
-pub const REQUEST_MISS: f64 = 190.0; // per required tile on expiry
+// Scoring constants (required-miss 1000, flexible shortfall 100, quota 4,
+// request reward 140, request miss 190) are deliberately NOT constants here:
+// the initialize message carries the full scoring contract per scenario and
+// the organizers may recalibrate it, so the rules below read the live values
+// from `publication.scoring_contract.score_config` (e.g.
+// `flexible_quota_per_region`, `penalties.*`).
 
 /// This few remaining windows counts as "about to miss", worth overriding the
 /// platform ranking.
@@ -77,12 +75,13 @@ fn remaining_chances(snapshot: &DecisionSnapshot, now: f64) -> HashMap<String, i
 
 /// Per-region shortfall toward the flexible quota (only regions present in
 /// `progress.flexible_completed_by_region` appear — Python iterates that dict).
-fn region_shortfall(snapshot: &DecisionSnapshot) -> HashMap<String, i64> {
+/// The quota comes from the scenario's scoring contract, not a constant.
+fn region_shortfall(snapshot: &DecisionSnapshot, quota: i64) -> HashMap<String, i64> {
     snapshot
         .progress
         .flexible_completed_by_region
         .iter()
-        .map(|(region, count)| (region.clone(), (FLEXIBLE_QUOTA - count).max(0)))
+        .map(|(region, count)| (region.clone(), (quota - count).max(0)))
         .collect()
 }
 
@@ -175,11 +174,16 @@ impl Selector for ReferenceSelector {
 
         let now = epoch_seconds(&snapshot.cursor.timestamp_utc);
         let chances = remaining_chances(snapshot, now);
-        let shortfall = region_shortfall(snapshot);
+        let quota = publication
+            .scoring_contract
+            .score_config
+            .flexible_quota_per_region;
+        let shortfall = region_shortfall(snapshot, quota);
         let urgent_requests = expiring_requests(snapshot, now);
 
-        // ① REQUIRED tile at risk — missing one costs 1000, the heaviest
-        //    penalty, so it outranks everything.
+        // ① REQUIRED tile at risk — missing one costs the contract's
+        //    required_miss penalty (1000 in the shipped configs), the
+        //    heaviest terminal account, so it outranks everything.
         let mut at_risk: Vec<(i64, usize)> = previews
             .iter()
             .enumerate()
