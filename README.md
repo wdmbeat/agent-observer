@@ -2,7 +2,7 @@
 
 A faithful Rust port of the **runtime core** of the agent-observer
 telescope-survey competition kit (Python original at
-`../../agent-observer-starter-kit`). It replays a survey against a scenario,
+`tmp/agent-observer-starter-kit`). It replays a survey against a scenario,
 drives an agent through the platform's decision loop, and scores the resulting
 trace — bit-for-bit compatible with the Python implementation on all bundled
 scenarios.
@@ -22,7 +22,7 @@ Run a survey with the built-in deterministic agent (no Python required):
 
 ```
 ./target/release/agent-observer run \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --out out/demo-week \
     rust baseline
 ```
@@ -33,9 +33,9 @@ Run the Python reference agent through the JSON-Lines subprocess transport
 
 ```
 ./target/release/agent-observer run \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --out out/demo-week-py \
-    python ../../agent-observer-starter-kit/agent/minimal_agent.py
+    python tmp/agent-observer-starter-kit/agent/minimal_agent.py
 ```
 
 (`python <script>` spawns `python3 -B <script>` with cwd = the script's
@@ -48,7 +48,7 @@ write a file, `--termination-reason` to override the default `trace_complete`):
 
 ```
 ./target/release/agent-observer score \
-    --scenario ../../agent-observer-starter-kit/scenarios/demo-week \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
     --decisions out/demo-week/decisions.csv
 ```
 
@@ -100,11 +100,8 @@ The agent is chosen by a trailing subcommand — `rust <STRATEGY>`,
   everything loads from the pre-generated CSVs under
   `scenarios/<name>/outputs/reference/`.
 - The **HTML replay renderer** (`challenge/replay.py`).
-- **LLM support** in the agent (LangGraph/model factory): the deterministic
-  path is what the shipped `minimal_agent.py` does when no model is
-  configured, which is also what the bundled goldens were produced with.
-- The kit's **fetch/pack/submit** tooling (`fetch_scenario.py`,
-  `pack_agent.py`, `sac_submit.py`) and the Windows `.bat` wrappers.
+- The kit's **fetch/submit** tooling (`fetch_scenario.py`, `sac_submit.py`)
+  and the Windows `.bat` wrappers.
 
 ## Verification
 
@@ -181,11 +178,12 @@ cargo test --release -- --ignored
 ```
 
 This covers the Python-agent transport path (skipped if the Python kit
-checkout is not next to this crate), the `rust baseline` agent, and the
-`rust reference` agent against the golden-reference runs.
+checkout is not next to this crate), the `rust baseline` agent, the
+`rust reference` agent against the golden-reference runs, and the standalone
+`sac-agent` binary through the `external` transport.
 
 Scenarios are located via the `AGENT_OBSERVER_SCENARIOS` env var, defaulting
-to `../../agent-observer-starter-kit/scenarios` relative to this crate.
+to `tmp/agent-observer-starter-kit/scenarios` relative to this crate.
 
 ## Writing your own strategy
 
@@ -218,3 +216,70 @@ reports. Anomaly thresholds are env-overridable via `SAC_ANOMALY_*`.
 To try a strategy end-to-end: add your selector, then
 `cargo run --release -- run --scenario <scenario> --out out/mine rust <name>`
 and compare `out/mine/score_report.json` against the baselines above.
+
+## The standalone agent (`sac-agent`)
+
+```
+cargo build --release --bin sac-agent
+```
+
+`sac-agent` is the standalone participant binary — the port of the kit's
+`agent/minimal_agent.py`. It speaks the platform's persistent JSON-Lines
+protocol on stdin/stdout (one `initialize` envelope, one
+`decision_request`/`decision_response` per slot, `finish` at the end; status
+lines go to stderr). Run it locally through the same subprocess transport the
+platform uses:
+
+```
+./target/release/agent-observer run \
+    --scenario tmp/agent-observer-starter-kit/scenarios/demo-week \
+    --out out/demo-week-sac \
+    external ./target/release/sac-agent
+```
+
+Deterministic by default, it reproduces the golden traces byte-identically
+(covered by the `sac_agent_matches_golden_decisions` gate). The strategy is
+chosen with `SAC_AGENT_STRATEGY=baseline|reference` (baseline default).
+
+LLM configuration mirrors the kit's `agent/.env.example` (a `.env` in the
+working directory is loaded without overriding real env vars):
+`MODEL_PROVIDER` (aliases like `chatgpt`, `kimi`, `qwen` supported),
+`MODEL_NAME`, `MODEL_BASE_URL`, the provider key (`OPENAI_API_KEY`,
+`MOONSHOT_API_KEY`, ..., or a custom `MODEL_API_KEY_ENV`), plus
+`LLM_TIMEOUT_SECONDS` (30), `LLM_MAX_RETRIES` (1), `LLM_TOP_K_CANDIDATES`
+(12). On the platform `OPENAI_BASE_URL`/`OPENAI_API_KEY` are injected and take
+precedence; the proxy speaks chat completions and substitutes the team model.
+Port limits: Anthropic's native API and the OpenAI Responses API mode are not
+supported (chat completions only). When a model is configured it picks one of
+the top-K preview candidates per decision; any error or invalid answer falls
+back to the deterministic strategy (logged to stderr as
+`sac-agent model fallback: ...`).
+
+## xtask workflow
+
+`cargo xtask` (alias defined in `.cargo/config.toml`; the xtask crate is
+deliberately detached from the main build):
+
+- `cargo xtask run <scenario> [--agent baseline|reference|sac-agent|python] [--release] [--wallclock S]`
+  — build what's needed, then run end-to-end into `out/<scenario>-<agent>/`.
+- `cargo xtask gate` — the fast suite plus all `#[ignore]`d end-to-end gates.
+- `cargo xtask compare <scenario> [--release]` — run baseline, reference, and
+  sac-agent, then print their totals side by side.
+- `cargo xtask pack [--out my-agent.zip]` — build the submission ZIP and
+  verify the platform build from it (below).
+- `cargo xtask book [--build]` — build and serve the strategy book (`book/`,
+  mdBook; install with `cargo install mdbook`) with live reload, opening a
+  browser; `--build` does a one-shot build into `book/book/` instead.
+
+## Submitting to the platform
+
+`observer.project.json` at the repo root is the platform contract: build with
+`cargo build --release --bin sac-agent`, run `./target/release/sac-agent`
+(rust:1-bookworm image). `cargo xtask pack` validates the manifest, packs it
+with `Cargo.toml`, `Cargo.lock`, and `src/` (never a `.env`), prints the
+SHA-256, and rebuilds from the extracted ZIP in a clean temp dir as a final
+check. Upload `my-agent.zip` on the Participate page. The manifest ships
+`MODEL_PROVIDER=deterministic`; to use the platform's model proxy, switch it
+to `openai` and set endpoint/model/key on the Participate page — remember
+"Save encrypted" before the competition ends. Platform docs:
+https://create.gosim.org/survey26/platform/docs

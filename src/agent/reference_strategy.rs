@@ -8,21 +8,18 @@
 
 use std::collections::HashMap;
 
-use serde_json::Value;
-
-use crate::contracts::{epoch_seconds, parse_utc};
+use crate::contracts::epoch_seconds;
 
 use super::decision_graph::{Selection, Selector};
+use super::model::{DecisionSnapshot, InitialPublication};
 use super::scoring_preview::CandidatePreview;
 
-// These numbers come from the public score_config.json; keep them in sync if
-// the competition configuration changes. (Documentation constants: the rules
-// below read the live snapshot/config values, like the Python original.)
-pub const MISS_REQUIRED: f64 = 1000.0; // per unfinished REQUIRED tile
-pub const SHORT_FLEXIBLE: f64 = 100.0; // per missing FLEXIBLE tile under quota
-pub const FLEXIBLE_QUOTA: i64 = 4; // completed FLEXIBLE tiles needed per region
-pub const REQUEST_REWARD: f64 = 140.0; // per required tile on completion
-pub const REQUEST_MISS: f64 = 190.0; // per required tile on expiry
+// Scoring constants (required-miss 1000, flexible shortfall 100, quota 4,
+// request reward 140, request miss 190) are deliberately NOT constants here:
+// the initialize message carries the full scoring contract per scenario and
+// the organizers may recalibrate it, so the rules below read the live values
+// from `publication.scoring_contract.score_config` (e.g.
+// `flexible_quota_per_region`, `penalties.*`).
 
 /// This few remaining windows counts as "about to miss", worth overriding the
 /// platform ranking.
@@ -42,13 +39,11 @@ const ENABLE_REQUEST_JUMP: bool = false;
 const ENABLE_QUOTA_RESCUE: bool = false;
 
 /// Protocol ISO timestamp → epoch seconds; unparseable → None (Python `_utc`).
-fn utc(value: &Value) -> Option<f64> {
-    value.as_str().and_then(|text| {
-        if text.is_empty() {
-            return None;
-        }
-        parse_utc(text).ok().map(|moment| epoch_seconds(&moment))
-    })
+fn utc(value: &str) -> Option<f64> {
+    if value.is_empty() {
+        return None;
+    }
+    crate::contracts::parse_utc(value).ok().map(|moment| epoch_seconds(&moment))
 }
 
 /// Per-tile remaining opportunities in the published windows: tonight's
@@ -58,21 +53,21 @@ fn utc(value: &Value) -> Option<f64> {
 /// except that Python counts windows with an *unparseable* end (end=None never
 /// compares `<= now`); preserved for fidelity, though shipped data always
 /// parses.
-fn remaining_chances(snapshot: &Value, now: f64) -> HashMap<String, i64> {
+fn remaining_chances(snapshot: &DecisionSnapshot, now: f64) -> HashMap<String, i64> {
     let mut counts: HashMap<String, i64> = HashMap::new();
-    let weekly = snapshot["weekly"]["tile_windows"].as_array();
-    let tonight = snapshot["night_start"]["tile_windows"].as_array();
-    for window in weekly.into_iter().flatten().chain(tonight.into_iter().flatten()) {
-        let end = utc(&window["window_end_utc"]);
-        if let Some(end) = end {
-            if end <= now {
+    let weekly = snapshot.weekly.iter().flat_map(|weekly| weekly.tile_windows.iter());
+    let tonight = snapshot
+        .night_start
+        .iter()
+        .flat_map(|night_start| night_start.tile_windows.iter());
+    for window in weekly.chain(tonight) {
+        if let Some(end) = window.window_end() {
+            if epoch_seconds(&end) <= now {
                 continue; // a window already past is not a chance
             }
         }
-        if let Some(tile_id) = window["tile_id"].as_str() {
-            if !tile_id.is_empty() {
-                *counts.entry(tile_id.to_string()).or_insert(0) += 1;
-            }
+        if !window.tile_id.is_empty() {
+            *counts.entry(window.tile_id.clone()).or_insert(0) += 1;
         }
     }
     counts
@@ -80,68 +75,35 @@ fn remaining_chances(snapshot: &Value, now: f64) -> HashMap<String, i64> {
 
 /// Per-region shortfall toward the flexible quota (only regions present in
 /// `progress.flexible_completed_by_region` appear — Python iterates that dict).
-fn region_shortfall(snapshot: &Value) -> HashMap<String, i64> {
-    snapshot["progress"]["flexible_completed_by_region"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .map(|(region, count)| {
-            (region.clone(), (FLEXIBLE_QUOTA - count.as_i64().unwrap_or(0)).max(0))
-        })
+/// The quota comes from the scenario's scoring contract, not a constant.
+fn region_shortfall(snapshot: &DecisionSnapshot, quota: i64) -> HashMap<String, i64> {
+    snapshot
+        .progress
+        .flexible_completed_by_region
+        .iter()
+        .map(|(region, count)| (region.clone(), (quota - count).max(0)))
         .collect()
 }
 
-/// Requests expiring within `EXPIRING_WITHIN_DAYS`. The deadline key list is
-/// probed in order and the FIRST key that parses decides — even when its
-/// deadline is far (Python `break`s out of the key loop either way).
-fn expiring_requests(snapshot: &Value, now: f64) -> std::collections::HashSet<String> {
+/// Requests expiring within `EXPIRING_WITHIN_DAYS`. Simplification versus
+/// Python, which probed five possible deadline keys in order: the platform
+/// wire only ever carries `deadline_utc`, so the typed field is the whole
+/// probe (the other keys never occur in real data; the gates verify
+/// byte-identical decisions).
+fn expiring_requests(snapshot: &DecisionSnapshot, now: f64) -> std::collections::HashSet<String> {
     let mut urgent = std::collections::HashSet::new();
-    for request in snapshot["active_requests"].as_array().into_iter().flatten() {
-        let request_id = request["request_id"].as_str().unwrap_or("");
-        if request_id.is_empty() {
+    for request in &snapshot.active_requests {
+        if request.request_id.is_empty() {
             continue;
         }
-        for key in ["deadline_utc", "expires_at_utc", "window_end_utc", "required_by_utc", "due_utc"] {
-            let Some(deadline) = utc(&request[key]) else {
-                continue;
-            };
-            if (deadline - now) / 86400.0 <= EXPIRING_WITHIN_DAYS {
-                urgent.insert(request_id.to_string());
-            }
-            break;
+        let Some(deadline) = utc(&request.deadline_utc) else {
+            continue;
+        };
+        if (deadline - now) / 86400.0 <= EXPIRING_WITHIN_DAYS {
+            urgent.insert(request.request_id.clone());
         }
     }
     urgent
-}
-
-/// The coverage weight: competition scenarios carry `coverage_bonus_weight` in
-/// the score config; practice scenarios don't and get 0. The Python pipeline
-/// injects `score_config` into the snapshot before the strategy sees it; we
-/// read it from the publication instead (identical visibility, no clone).
-fn coverage_weight(snapshot: &Value, publication: &Value) -> f64 {
-    for key in ["score_config", "scoring", "competition"] {
-        let block = if key == "score_config" && snapshot.get("score_config").is_none() {
-            // decision_graph._strategy_decision injects the publication's
-            // scoring_contract.score_config into the snapshot the strategy sees.
-            publication
-                .get("scoring_contract")
-                .and_then(|contract| contract.get("score_config"))
-        } else {
-            snapshot.get(key)
-        };
-        if let Some(block) = block {
-            if let Some(weight) = block.get("coverage_bonus_weight") {
-                return weight
-                    .as_f64()
-                    .or_else(|| weight.as_str().and_then(|text| text.parse().ok()))
-                    .unwrap_or(0.0);
-            }
-        }
-    }
-    let top = &snapshot["coverage_bonus_weight"];
-    top.as_f64()
-        .or_else(|| top.as_str().and_then(|text| text.parse().ok()))
-        .unwrap_or(0.0)
 }
 
 /// Jain fairness index gain from one more completion in `region`. Integer
@@ -188,7 +150,12 @@ fn normalize_reason(reason: &str) -> String {
 }
 
 impl Selector for ReferenceSelector {
-    fn select(&mut self, previews: &[CandidatePreview], snapshot: &Value, publication: &Value) -> Selection {
+    fn select(
+        &mut self,
+        previews: &[CandidatePreview],
+        snapshot: &DecisionSnapshot,
+        publication: &InitialPublication,
+    ) -> Selection {
         // `choose_action` is only reached with a non-empty candidate list in the
         // Python graph (empty → deterministic wait before the strategy runs).
         let Some(fallback) = previews.first() else {
@@ -199,19 +166,24 @@ impl Selector for ReferenceSelector {
         };
         let observe = |preview: &CandidatePreview, reason: String| Selection::Observe {
             tile_id: preview.tile_id.clone(),
-            program: preview.program.clone(),
+            program: preview.program,
             request_id: preview.request_id.clone(),
             reason: normalize_reason(&reason),
             source: "strategy",
         };
 
-        let now = utc(&snapshot["cursor"]["timestamp_utc"]).unwrap_or(0.0);
+        let now = epoch_seconds(&snapshot.cursor.timestamp_utc);
         let chances = remaining_chances(snapshot, now);
-        let shortfall = region_shortfall(snapshot);
+        let quota = publication
+            .scoring_contract
+            .score_config
+            .flexible_quota_per_region;
+        let shortfall = region_shortfall(snapshot, quota);
         let urgent_requests = expiring_requests(snapshot, now);
 
-        // ① REQUIRED tile at risk — missing one costs 1000, the heaviest
-        //    penalty, so it outranks everything.
+        // ① REQUIRED tile at risk — missing one costs the contract's
+        //    required_miss penalty (1000 in the shipped configs), the
+        //    heaviest terminal account, so it outranks everything.
         let mut at_risk: Vec<(i64, usize)> = previews
             .iter()
             .enumerate()
@@ -268,8 +240,15 @@ impl Selector for ReferenceSelector {
 
         // ④ Coverage evenness — worth about a fifth of the total in the
         //    competition scenario, the single most valuable account. Weight 0 in
-        //    practice scenarios disables this rule automatically.
-        let weight = coverage_weight(snapshot, publication);
+        //    practice scenarios disables this rule automatically. The Python
+        //    pipeline injects `score_config` into the snapshot before the
+        //    strategy sees it; the typed model reads the publication's
+        //    scoring contract directly (identical visibility).
+        let weight = publication
+            .scoring_contract
+            .score_config
+            .coverage_bonus_weight
+            .unwrap_or(0.0);
         if weight > 0.0 {
             let memory = &mut self.memory;
             let science_so_far = memory.science;

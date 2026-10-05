@@ -1,12 +1,12 @@
 //! Native deterministic agent — port of the `agent/` Python package
-//! (deterministic path; no LLM, no LangGraph).
+//! (deterministic pipeline plus the optional LLM selector; no LangGraph).
 //!
 //! The file layout mirrors the Python kit's `agent/` directory so the two
 //! implementations can be compared side by side:
 //!
 //! | Python (`agent/`)         | Rust (`src/agent/`)      |
 //! |---------------------------|--------------------------|
-//! | `minimal_agent.py`        | *(no counterpart — the in-process agent has no JSONL loop; `src/transport.rs` covers the subprocess side)* |
+//! | `minimal_agent.py`        | `minimal_agent.rs` + `src/bin/sac_agent.rs` (the `sac-agent` binary) |
 //! | `protocol.py`             | `protocol.rs`            |
 //! | `decision_graph.py`       | `decision_graph.rs`      |
 //! | `state.py`                | `state.rs`               |
@@ -14,14 +14,21 @@
 //! | `anomaly_detection.py`    | `anomaly_detection.rs`   |
 //! | `my_strategy.py`          | `my_strategy.rs`         |
 //! | `reference_strategy.py`   | `reference_strategy.rs`  |
-//! | `model_factory.py`        | `model_factory.rs` *(placeholder: `todo!()` stubs, no LLM support yet)* |
+//! | `model_factory.py`        | `model_factory.rs`       |
 //!
-//! `strategy.rs` is Rust-only CLI glue (the `Strategy` value-enum and agent
-//! factory) with no Python counterpart. This `mod.rs` additionally holds
-//! `AgentSpec`, the typed agent selection shared by the CLI and the library.
+//! `model.rs` holds the agent-only snapshot/decision wire types (the Python
+//! agent passes dicts around; there is no counterpart file). The shared
+//! publication wire schema (`InitialPublication` and friends) lives in
+//! `src/schema.rs`, used by both the workflow producer and the agent, and is
+//! re-exported from `model.rs`. `strategy.rs` is Rust-only CLI glue (the
+//! `Strategy` value-enum and agent factory) with no Python counterpart. This
+//! `mod.rs` additionally holds `AgentSpec`, the typed agent selection shared
+//! by the CLI and the library.
 
 pub mod anomaly_detection;
 pub mod decision_graph;
+pub mod minimal_agent;
+pub mod model;
 pub mod model_factory;
 pub mod my_strategy;
 pub mod protocol;

@@ -20,7 +20,7 @@ const EXPECTED_TOTALS: [(&str, f64); 3] = [
 
 fn python_agent_script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../agent-observer-starter-kit/agent/minimal_agent.py")
+        .join("tmp/agent-observer-starter-kit/agent/minimal_agent.py")
 }
 
 #[test]
@@ -68,6 +68,19 @@ fn reference_strategy_matches_golden_decisions() {
             .join("golden-reference")
             .join(name);
         run_gate_at(name, expected_total, &["rust".into(), "reference".into()], &golden);
+    }
+}
+
+/// The standalone JSONL binary (`sac-agent`) through the real subprocess
+/// transport (`external`). The transport scrubs the child environment to PATH
+/// + contract variables, so no developer `MODEL_*`/`OPENAI_*` env leaks in and
+/// the binary runs deterministic — byte-identical to the golden baseline runs.
+#[test]
+#[ignore = "run explicitly"]
+fn sac_agent_matches_golden_decisions() {
+    let binary = env!("CARGO_BIN_EXE_sac-agent");
+    for (name, expected_total) in EXPECTED_TOTALS {
+        run_gate(name, expected_total, &["external".into(), binary.into()]);
     }
 }
 

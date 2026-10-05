@@ -8,6 +8,7 @@ pub mod calendar;
 pub mod contracts;
 pub mod geometry;
 pub mod requests;
+pub mod schema;
 pub mod scoring;
 pub mod transport;
 pub mod weather;

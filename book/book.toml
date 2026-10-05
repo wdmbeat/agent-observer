@@ -1,0 +1,11 @@
+[book]
+title = "Agent Observer — Strategy Notes"
+description = "A mathematical and engineering study of the agent-observer telescope-survey scheduling challenge"
+authors = ["zw"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "rust"
+git-repository-url = "https://create.gosim.org/survey26/platform"

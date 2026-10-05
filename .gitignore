@@ -1,4 +1,11 @@
+tmp
 /target/
+/book/book/
+/out/
+/my-agent.zip
+.env
+xtask/target/
+xtask/Cargo.lock
 
 # Golden run artifacts: the tests only read decisions.csv and score_report.json.
 # The rest are large byproducts of the Python golden runs (HTML replays, the
